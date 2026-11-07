@@ -616,19 +616,15 @@ def main():
             tap_on(wgt, wgt.pick.cancel)
             if module.writes or wgt.vtx.ui != "main":
                 problems.add(f"{w}x{h}: CANCEL in the VTX picker didn't just close it")
-            # Choose F4 at power 2, SEND, then BACK and SEND again, then CONFIRM.
+            # Choose F4 at power 2; one tap on SEND sends it (no confirm screen).
             tap_on(wgt, wgt.lay.video)
             for rect in (wgt.pick.rows[1][2], wgt.pick.rows[2][4], wgt.pick.rows[3][3]):
-                tap_on(wgt, rect)
-            s = tap_on(wgt, wgt.pick.ok)
-            expect(s, "CONFIRM", "SEND asks for confirmation")
-            expect(s, "F4  5800MHz  PWR 2", "the confirmation shows the choice")
-            expect(s, "ELRS sends it to every quad that connects,", "the confirmation explains")
-            save(s, "confirm")
-            s = tap_on(wgt, wgt.pick.cancel)
-            expect(s, "SEND", "BACK returns to the picker")
-            tap_on(wgt, wgt.pick.ok)
+                s = tap_on(wgt, rect)
+            expect(s, "F4  5800MHz  PWR 2", "the picker title shows the choice")
+            save(s, "picker-chosen")
             s = tap_on(wgt, wgt.pick.ok, frames=60)
+            if wgt.vtx.ui != "main":
+                problems.add(f"{w}x{h}: SEND didn't send and close the picker (ui {wgt.vtx.ui})")
             wanted = [(band, 4), ("Channel", 4), ("Pwr Lvl", 2), ("Send VTx", 1)]
             if module.writes != wanted:
                 problems.add(f"{w}x{h}: VTX send wrote {module.writes}, expected {wanted}")
@@ -648,7 +644,6 @@ def main():
             run(wgt, w, h, fonts, frames=80, fullscreen=True)
             tap_on(wgt, wgt.lay.video)
             tap_on(wgt, wgt.pick.rows[2][4])
-            tap_on(wgt, wgt.pick.ok)
             tap_on(wgt, wgt.pick.ok, frames=60)
             if wgt.vtx.state != "failed":
                 problems.add(f"{w}x{h}: a VTX send the module ignored wasn't reported as failed")
@@ -692,10 +687,9 @@ def main():
                 problems.add(f"{w}x{h}: band F's channels not greyed out as in the FC table")
             tap_on(wgt, wgt.pick.rows[2][1])  # F1 doesn't exist: ignored
             tap_on(wgt, wgt.pick.rows[2][4])
-            tap_on(wgt, wgt.pick.rows[3][2])  # 25
-            s = tap_on(wgt, wgt.pick.ok)
+            s = tap_on(wgt, wgt.pick.rows[3][2])  # 25
             expect(s, "F4  5800MHz  PWR 25", "picker choice with the FC's power label")
-            save(s, "confirm-fc")
+            save(s, "picker-fc-chosen")
             # Sending while linked: the FC takes it, and turns green when read back.
             s = tap_on(wgt, wgt.pick.ok, frames=120)
             if (fc.band, fc.ch) != (4, 4):

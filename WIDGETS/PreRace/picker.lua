@@ -1,4 +1,4 @@
--- The VTX picker and its confirmation screen, drawn over the whole widget.
+-- The VTX picker, drawn over the whole widget.
 -- Only reachable in fullscreen, where touch events arrive.
 
 local M = {}
@@ -10,13 +10,6 @@ local drawRect = lcd.drawRectangle
 
 local ROW_LABELS = { "BAND", "CHAN", "POWER" }
 local ROW_KINDS = { "band", "chan", "power" }
-
--- Shown on the confirm screen (WIDGET_SPEC.md: the send goes to every quad).
-local CONFIRM_LINES = {
-  "Send this to the VTX?",
-  "ELRS sends it to every quad that connects,",
-  "now and later, until you change it.",
-}
 
 local function buttonRow(x, y, w, h, n, gap)
   local row = {}
@@ -54,7 +47,6 @@ function M.layout(w, h, fit, v, channelLabels)
     labels = {},
   }
   local y = 2 * pad + titleH
-  P.textY, P.textH = y, 3 * rowH + 2 * pad  -- confirm screen text area
   local rowLabels = { v.bandLabels, channelLabels, v.powerLabels }
   local fontH
   for r = 1, 3 do
@@ -73,15 +65,8 @@ function M.layout(w, h, fit, v, channelLabels)
   P.cancel = { x = pad, y = y, w = half, h = rowH }
   P.ok = { x = 2 * pad + half, y = y, w = half, h = rowH }
 
-  P.actionFont = fit("CONFIRM", half - 2 * pad, rowH - pad)
+  P.actionFont = fit("CANCEL", half - 2 * pad, rowH - pad)
   P.titleFont = fit("R8  5917MHz  PWR 200", P.title.w - 2 * pad, titleH - pad)
-  local lineH = floor(P.textH / 3)
-  P.lineFonts = {
-    fit(CONFIRM_LINES[1], w - 2 * pad, lineH),
-    fit(CONFIRM_LINES[2], w - 2 * pad, lineH),
-  }
-  P.lineFonts[3] = P.lineFonts[2]
-  P.lineH = lineH
   return P
 end
 
@@ -109,17 +94,6 @@ function M.draw(P, v, vtx, c)
   local t = P.title
   drawText(t.x + floor(t.w / 2), t.y + floor(t.h / 2), v.title, P.titleFont + CENTER + VCENTER + c.fg)
 
-  if v.ui == "confirm" then
-    local x = floor(P.w / 2)
-    for i = 1, #CONFIRM_LINES do
-      local y = P.textY + (i - 1) * P.lineH + floor(P.lineH / 2)
-      drawText(x, y, CONFIRM_LINES[i], P.lineFonts[i] + CENTER + VCENTER + (i == 1 and c.fg or c.label))
-    end
-    button(P.cancel, "BACK", P.actionFont, false, c)
-    button(P.ok, "CONFIRM", P.actionFont, true, c)
-    return
-  end
-
   local s = v.sel
   for r = 1, 3 do
     drawText(P.labels[r].x, P.labels[r].y, ROW_LABELS[r], SMLSIZE + VCENTER + c.label)
@@ -144,18 +118,17 @@ end
 
 -- What a tap at (x, y) hit: "cancel", "ok", or "band"/"chan"/"power" and the
 -- button's index. Nothing if it missed.
-function M.hit(P, ui, x, y)
+function M.hit(P, x, y)
   if inside(P.cancel, x, y) then
     return "cancel"
   elseif inside(P.ok, x, y) then
     return "ok"
-  elseif ui == "picker" then
-    for r = 1, 3 do
-      local row = P.rows[r]
-      for i = 1, #row do
-        if inside(row[i], x, y) then
-          return ROW_KINDS[r], i
-        end
+  end
+  for r = 1, 3 do
+    local row = P.rows[r]
+    for i = 1, #row do
+      if inside(row[i], x, y) then
+        return ROW_KINDS[r], i
       end
     end
   end

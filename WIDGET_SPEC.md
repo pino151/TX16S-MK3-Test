@@ -42,10 +42,9 @@ red for status (no yellow, which was too harsh).
   Tap it (in fullscreen) to open the picker:
   - Bands R, F, E, B, A (ELRS's L isn't in Betaflight's default VTX table), channels 1–8,
     power -/1–8, then CANCEL or SEND. The heading shows the choice, e.g. "R3  5732MHz  PWR 2".
-  - SEND opens the confirmation: "Send this to the VTX? ELRS sends it to every quad that
-    connects, now and later, until you change it." BACK or CONFIRM. EXIT, or leaving
-    fullscreen, closes either screen.
-  - CONFIRM writes Band, Channel and Pwr Lvl to the module, presses "Send VTx", waits 0.3 s
+  - EXIT, or leaving fullscreen, closes the picker without sending.
+  - SEND sends straight away (no confirmation screen). It writes Band, Channel and Pwr Lvl
+    to the module, presses "Send VTx", waits 0.3 s
     and reads them back. While that runs the channel shows grey; then green if the module holds
     the new values, red if not (or after 5 s without an answer), for 5 s.
   - Once the FC's VTX table has been read (linked), the picker follows it: the FC's band
@@ -149,9 +148,12 @@ Widget options (max 5):
   re-read when the widget resumes after a tool, every 30 s while not armed, and in full scan
   on ENTER (in fullscreen).
 - Don't break if no ELRS module is detected. Show a clear message instead.
-- The VTX picker needs a confirmation step before sending. The module itself asks for no
-  confirmation, so ours is the only one. The confirm text should say that the choice is sent
-  to **every quad that connects** (see Q1).
+- The VTX picker sends on SEND with no confirmation step (dropped at the user's request), and
+  the module asks for none either. The choice still goes to **every quad that connects**,
+  now and later, until it's changed (see Q1).
+- Redraw rate: EdgeTX calls `refresh` once per UI cycle, every 50 ms (`MENU_TASK_PERIOD` in
+  `radio/src/tasks.cpp`), so the sticks and bars update at most 20 times a second. Lua can't
+  change that, and EdgeTX's own widgets update at the same rate.
 - The widget receives a copy of **every** incoming CRSF frame, including replies meant for other
   scripts. Filter by frame type, source address and field ID.
 - Opening any tool (including the ELRS Lua) freezes the widget completely. On return, notice the

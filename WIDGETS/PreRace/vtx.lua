@@ -208,7 +208,7 @@ function M.new()
     video = cell(),  -- VIDEO panel: band and channel, frequency or FC status
     power = cell(),  -- VIDEO panel: power level
     state = "idle",  -- idle, writing, settling, verifying, sent or failed
-    ui = "main",     -- main, picker or confirm
+    ui = "main",     -- main or picker
     sel = { band = 5, ch = 1, pwr = 0 },
     title = "",
     version = -1,
@@ -358,30 +358,24 @@ local function send(v, crsf, link)
 end
 
 -- A tap on the picker ("band", "chan" or "power" with its index) or on its
--- buttons ("cancel", "ok"). On the confirm screen "ok" sends.
+-- buttons ("cancel", "ok"). "ok" (SEND) sends straight away.
 function M.choose(v, kind, i, crsf, link)
   local s = v.sel
-  if v.ui == "picker" then
-    if kind == "band" and v.bands[i] then
-      s.band = v.bands[i]
-      fixSelection(v)
-    elseif kind == "chan" and v.chanOk[i] then
-      s.ch = i
-    elseif kind == "power" and v.powerLabels[i] then
-      s.pwr = i - 1
-    elseif kind == "cancel" then
-      v.ui = "main"
-    elseif kind == "ok" then
-      v.ui = "confirm"
-    end
-    describe(v)
-  elseif v.ui == "confirm" then
-    if kind == "cancel" then
-      v.ui = "picker"
-    elseif kind == "ok" then
-      send(v, crsf, link)
-    end
+  if kind == "band" and v.bands[i] then
+    s.band = v.bands[i]
+    fixSelection(v)
+  elseif kind == "chan" and v.chanOk[i] then
+    s.ch = i
+  elseif kind == "power" and v.powerLabels[i] then
+    s.pwr = i - 1
+  elseif kind == "cancel" then
+    v.ui = "main"
+    return
+  elseif kind == "ok" then
+    send(v, crsf, link)
+    return
   end
+  describe(v)
 end
 
 -- The send: writes go out, the module settles, then its values are read back.

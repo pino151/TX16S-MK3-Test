@@ -129,7 +129,7 @@ local function onEvent(wgt, event, touchState)
   local tap = touchState and event == EVT_TOUCH_TAP
   if v.ui ~= "main" then
     if tap then
-      local kind, i = m.picker.hit(pickerLayout(wgt), v.ui, touchState.x, touchState.y)
+      local kind, i = m.picker.hit(pickerLayout(wgt), touchState.x, touchState.y)
       if kind then
         m.vtx.choose(v, kind, i, m.crsf, e.link)
       end
