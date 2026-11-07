@@ -33,7 +33,12 @@ Lay the screen out in zones. Suggested arrangement (Claude may propose a better 
   (bands: R, F, E, etc.; channels 1–8), then send the choice via ELRS VTX Admin. When linked,
   grey out channels the FC's vtxtable marks as unsupported (frequency 0, see Q1).
 - **Top right: ELRS.** Packet rate, TX power and telemetry ratio. Display only, no editing.
-  TX power above 500mW is shown as "1W"/"2W" so all three values fit one font size.
+  Each value has a detail beside its label: the rest of the rate name plus the RF band
+  ("Full", "2.4G", "Full 900M"), dynamic power ("Dyn" or its AUX switch), and the telemetry
+  ratio or bandwidth ("1:64", "5859bps"). TX power from 1000mW is shown as "1W"/"2W" so all
+  three values fit one font size. Telemetry Off shows yellow (the QUAD strip needs it).
+  Until values arrive the panel says READING, or why there are none: NO MODULE (no CRSF
+  module set up in the model), NO REPLY, or NOT ELRS. Values show grey while being re-read.
 - **Middle: STICKS and AUX**, laid out like the radio: left gimbal, aux grid, right gimbal.
   - **STICKS:** two gimbal circles with live crosshairs showing the actual channel outputs,
     with the axis values (Y/T/R/P in %) underneath. The stick mode decides which gimbal
@@ -95,7 +100,11 @@ Widget options (max 5):
 - Never block. CRSF parameter reads happen gradually across refresh/background calls.
   A visible widget only gets `refresh()` and a hidden one only `background()`, never both in
   the same cycle, so the CRSF/MSP state machine must be stepped from both.
-- Cache the ELRS settings and show "reading…" until they're loaded. Allow a manual refresh tap.
+- Cache the ELRS settings and show READING until they're loaded. A full scan pings for the
+  module, then reads fields by ID, drops each field it doesn't need as soon as its name is in,
+  and stops once it has the ones it needs; lost replies are retried twice. The known fields are
+  re-read when the widget resumes after a tool, every 30 s while not armed, and in full scan
+  on a tap on the ELRS panel or ENTER (both need fullscreen).
 - Don't break if no ELRS module is detected. Show a clear message instead.
 - The VTX picker needs a confirmation step before sending. The module itself asks for no
   confirmation, so ours is the only one. The confirm text should say that the choice is sent
@@ -235,7 +244,7 @@ Protocol (same in 3.x and 4.x):
 1. Static layout, plus live sticks and aux bars with output names. *(Done: `WIDGETS/PreRace/`.
    The MK2 compact layout is still to do.)*
 2. Quad telemetry status strip. *(Done: `telem.lua`.)*
-3. Reading ELRS settings over CRSF.
+3. Reading ELRS settings over CRSF. *(Done: `crsf.lua`, `elrs.lua`.)*
 4. VTX channel picker and send.
 5. VTX read-back from the FC over MSP.
 

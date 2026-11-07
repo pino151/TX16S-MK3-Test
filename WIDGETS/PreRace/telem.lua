@@ -42,6 +42,7 @@ function M.new()
     nextUpdate = 0,
     nextLookup = 0,
     linked = false,
+    armed = false,
     cells = 0,  -- detected cell count, kept while the link stays up
     link = cell(),
     pack = cell(),
@@ -145,6 +146,7 @@ local function updateFc(t)
     return
   end
   c.fm = fm
+  t.armed = false
   if type(fm) ~= "string" or fm == "" then
     set(c, "--", "", NONE)
   elseif fm == "!FS!" then
@@ -155,6 +157,7 @@ local function updateFc(t)
       set(c, status[1], string.sub(fm, 1, -2), status[2])
     else
       set(c, "ARMED", fm, BAD)  -- armed while walking out is the thing to catch
+      t.armed = true
     end
   end
 end
@@ -174,6 +177,7 @@ function M.update(t, cellsOption)
     t.nextLookup = now  -- look for sensors as soon as telemetry starts
   end
   if not linked then
+    t.armed = false
     return
   end
   lookup(t, now)

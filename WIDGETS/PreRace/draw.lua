@@ -40,9 +40,8 @@ function M.palette(light)
   }
 end
 
--- Placeholders until build steps 3-4 fill these panels in.
+-- Placeholder until build steps 4-5 fill this panel in.
 local VIDEO_VALUES = { "--", "--" }
-local ELRS_VALUES = { "--", "--", "--" }
 local QUAD_IDLE = { "NO LINK" }
 
 local LIMIT = 1024  -- output value at +/-100%
@@ -70,18 +69,14 @@ local function panel(p, values, c, valueColor)
   end
 end
 
--- QUAD strip: "NO LINK", or one cell each for link, pack, FC and VTX with
--- the main value coloured by its status and a detail beside the label.
-local function quadStrip(L, t, c)
-  if not t.linked then
-    panel(L.stripIdle, QUAD_IDLE, c, c.noLink)
-    return
-  end
-  local p, pad = L.strip, L.pad
+-- A panel of cells, each { main, sub, level }: the main value coloured by
+-- its status level and a detail right of the label. `dim` greys the values
+-- (they're being read again).
+local function cells(p, list, c, pad, dim)
   frame(p, c)
   local top, bottom, n = p.y + pad, p.y + p.h - pad - 1, #p.cols
   for i = 1, n do
-    local col, cell = p.cols[i], t.list[i]
+    local col, cell = p.cols[i], list[i]
     -- Keep text a pad away from the separators between cells.
     local left, right = col.x, col.right
     if i > 1 then
@@ -94,7 +89,26 @@ local function quadStrip(L, t, c)
     end
     drawText(left, col.labelY, col.label, SMLSIZE + c.label)
     drawText(right, col.labelY, cell.sub, SMLSIZE + RIGHT + c.fg)
-    drawText(col.cx, col.cy, cell.main, col.font + CENTER + VCENTER + c.levels[cell.level])
+    local color = dim and c.label or c.levels[cell.level]
+    drawText(col.cx, col.cy, cell.main, col.font + CENTER + VCENTER + color)
+  end
+end
+
+-- QUAD strip: "NO LINK", or cells for link, pack, FC and VTX.
+local function quadStrip(L, t, c)
+  if t.linked then
+    cells(L.strip, t.list, c, L.pad)
+  else
+    panel(L.stripIdle, QUAD_IDLE, c, c.noLink)
+  end
+end
+
+-- ELRS panel: why there's nothing to show, or rate, power and telemetry.
+local function elrsPanel(L, e, c)
+  if e.message then
+    panel(L.elrsIdle, e.messageList, c, c.levels[e.messageLevel])
+  else
+    cells(L.elrs, e.list, c, L.pad, e.refreshing)
   end
 end
 
@@ -149,14 +163,13 @@ function M.screen(wgt)
   if L.tooSmall then
     local x, y = floor(L.w / 2), floor(L.h / 2)
     local _, lineH = lcd.sizeText("A", SMLSIZE)
-    local half = floor(lineH / 2)
-    drawText(x, y - half, "Pre-race:", SMLSIZE + CENTER + VCENTER + c.fg)
-    drawText(x, y + half, "full screen only", SMLSIZE + CENTER + VCENTER + c.fg)
+    drawText(x, y - lineH, "Pre-race:", SMLSIZE + CENTER + c.fg)
+    drawText(x, y, "full screen only", SMLSIZE + CENTER + c.fg)
     return
   end
 
   panel(L.video, VIDEO_VALUES, c, c.fg)
-  panel(L.elrs, ELRS_VALUES, c, c.fg)
+  elrsPanel(L, wgt.elrs, c)
   quadStrip(L, wgt.telem, c)
 
   local s = wgt.sticks

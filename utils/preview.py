@@ -6,13 +6,19 @@ the EdgeTX Lua API, and saves what it draws as PNG files at the MK3's 800x480
 and the MK2's 480x272. Text uses the Roboto fonts at the pixel sizes EdgeTX
 uses, so layouts come out close to the radio.
 
+CRSF telemetry sensors and an ExpressLRS TX module (utils/fake_elrs.py: the
+MK3's internal ELRS 4.x module at 800x480, the MK2's Ranger Micro on ELRS
+3.x at 480x272) are simulated too, frame by frame on a simulated clock.
+
 It also reports problems that are easy to miss on the radio:
   - Lua syntax errors in any script under WIDGETS/ and SCRIPTS/
-  - drawing outside the widget's zone
+  - drawing outside the widget's zone, text overlapping other text, and
+    text under EdgeTX's App-mode menu button
   - lines EdgeTX would drop (an end outside the screen)
   - global variables the widget creates (all widgets share one Lua state)
   - string method calls like s:format() (use string.format(s, ...))
-  - output names not re-read after background()
+  - behaviour checks: output names, telemetry states, reading the ELRS
+    settings (lost replies, re-reads, refresh tap, no module)
 
 This checks layout and logic only. It is not a simulator, so still test in
 Companion and on the radio.
@@ -37,6 +43,8 @@ try:
 except ImportError:
     sys.exit("Needs lupa with Lua 5.2: pip install lupa")
 from PIL import Image, ImageDraw, ImageFont
+
+import fake_elrs
 
 REPO = Path(__file__).resolve().parent.parent
 FONT_CACHE = Path(__file__).resolve().parent / ".fonts"
@@ -103,6 +111,9 @@ CONSTANTS = {
     # Widget option types (values only need to be distinct here).
     "VALUE": 1, "SOURCE": 2, "COLOR": 3, "BOOL": 4, "STRING": 5, "TIMER": 6,
     "TEXT_SIZE": 7, "ALIGNMENT": 8, "SWITCH": 9, "SLIDER": 10, "CHOICE": 11,
+    # Events (values only need to be distinct here).
+    "EVT_TOUCH_FIRST": 0x8001, "EVT_TOUCH_TAP": 0x8002, "EVT_TOUCH_BREAK": 0x8003,
+    "EVT_TOUCH_SLIDE": 0x8004, "EVT_VIRTUAL_ENTER": 0x8005, "EVT_VIRTUAL_EXIT": 0x8006,
 }
 
 # Radio data the scenarios use. CH1-CH4 in AETR order (stick numbers:
@@ -223,10 +234,14 @@ class Screen:
         elif flags & CENTER:
             x -= width // 2
         self.check(f"text {text!r}", x, y, x + width, y + line_h)
+        box = (x, y, x + width, y + line_h)
+        for other, *b in self.text_boxes:
+            if text and other and box[0] < b[2] and b[0] < box[2] and box[1] < b[3] and b[1] < box[3]:
+                self.problems.add(f"{self.w}x{self.h}: text {text!r} overlaps {other!r}")
         self.d.text((x, y + line_h - base), text, font=font, fill=flag_rgb(flags),
                     anchor="ls")
         self.texts.append(text)
-        self.text_boxes.append((text, x, y, x + width, y + line_h))
+        self.text_boxes.append((text, *box))
 
     def app_mode_button(self):
         """Report text under EdgeTX's menu button, then draw the button."""
@@ -288,8 +303,8 @@ class Screen:
 
 
 class Radio:
-    """Mock EdgeTX runtime: lcd.*, model.*, outputs, stick settings and
-    CRSF telemetry sensors."""
+    """Mock EdgeTX runtime: lcd.*, model.*, outputs, stick settings, CRSF
+    telemetry sensors and the CRSF link to a (fake) TX module."""
 
     def __init__(self, lua, problems):
         self.lua = lua
@@ -301,6 +316,8 @@ class Radio:
         self.telemetry = None      # sensor name -> value while linked
         self.discovered = set()    # sensors EdgeTX has created so far
         self.last = {}             # last value of each sensor
+        self.module = None         # fake_elrs.FakeElrs, or None: no CRSF module
+        self.crsf_in = []          # (ready at tick, command, data) on the way in
         g = lua.globals()
         for name, value in CONSTANTS.items():
             g[name] = value
@@ -320,6 +337,31 @@ class Radio:
         g.getRSSI = self.get_rssi
         g.getFieldInfo = self.get_field_info
         g.getSourceValue = self.get_source_value
+        g.crossfireTelemetryPush = self.crsf_push
+        g.crossfireTelemetryPop = self.crsf_pop
+
+    def set_module(self, module):
+        """Plug in a fake module (or None). An unrelated ELRS status frame is
+        already queued, as the widget must skip frames it didn't ask for."""
+        self.module = module
+        self.crsf_in = [(0, fake_elrs.ELRS_STATUS, [0xEA, 0xEE, 0, 0, 0, 0, 0])] if module else []
+
+    def crsf_push(self, command=None, data=None):
+        """nil without a CRSF module, else true. Replies arrive a tick later."""
+        if self.module is None:
+            return None
+        if command is not None:
+            payload = [int(data[i]) for i in range(1, len(data) + 1)]
+            for reply in self.module.handle(int(command), payload):
+                self.crsf_in.append((self.clock + 1, *reply))
+        return True
+
+    def crsf_pop(self):
+        for i, (ready, command, data) in enumerate(self.crsf_in):
+            if ready <= self.clock:
+                del self.crsf_in[i]
+                return command, self.lua.table_from(data)
+        return None
 
     def set_telemetry(self, values):
         """Start (dict) or stop (None) the link. Like EdgeTX, sensors are
@@ -406,40 +448,60 @@ def main():
     out = REPO / args.out
     out.mkdir(exist_ok=True)
     written = []
+    step = 5  # ticks per frame: EdgeTX calls refresh() about every 50 ms
+    tap = CONSTANTS["EVT_TOUCH_TAP"]
 
-    def render(w, h, fonts, outputs, telemetry, wgt=None, light=False):
-        """Advance the clock, set the radio's state and run one refresh()."""
-        radio.clock += 50
+    def new_widget(w, h, light=False):
+        opts = default_options(widget)
+        opts["Light"] = 1 if light else 0
+        zone = lua.table_from({"x": 0, "y": 0, "w": w, "h": h, "xabs": 0, "yabs": 0})
+        return widget.create(zone, opts)
+
+    def run(wgt, w, h, fonts, frames=4, outputs=OUT_IDLE, telemetry=None, event=None, touch=None):
+        """Set the radio's state, then call refresh() `frames` times, one step
+        apart. The first call gets `event`, and `touch` as (x, y)."""
         radio.outputs = outputs
         radio.set_telemetry(telemetry)
-        radio.screen = Screen(w, h, fonts, problems)
-        if wgt is None:
-            opts = default_options(widget)
-            opts["Light"] = 1 if light else 0
-            zone = lua.table_from({"x": 0, "y": 0, "w": w, "h": h, "xabs": 0, "yabs": 0})
-            wgt = widget.create(zone, opts)
-        widget.refresh(wgt, None, None)
-        return wgt, radio.screen
+        for i in range(frames):
+            radio.clock += step
+            radio.screen = Screen(w, h, fonts, problems)
+            ev = event if i == 0 else None
+            ts = lua.table_from({"x": touch[0], "y": touch[1], "tapCount": 1}) if ev and touch else None
+            widget.refresh(wgt, ev, ts)
+        return radio.screen
 
-    def fresh_radio():
+    def fresh_radio(module=None):
         radio.names = dict(NAMES)
         radio.discovered, radio.last = set(), {}
+        radio.set_module(module)
 
     def expect(screen, text, what):
         if text not in screen.texts:
             problems.add(f"{screen.w}x{screen.h}: {what}: no {text!r} on screen")
 
+    def guarded(label, check):
+        try:
+            check()
+        except lupa52.LuaError as e:
+            problems.add(f"{label}: Lua error: {e}")
+
     for size in args.sizes.split(","):
         w, h = (int(v) for v in size.lower().split("x"))
         fonts = Fonts(args.fonts, "lrg" if w >= 800 else "std")
-        frames = [("idle", False), ("linked", False), ("warnings", False), ("linked", True)]
-        for scenario, light in frames:
-            fresh_radio()
-            try:
-                wgt, screen = render(w, h, fonts, *SCENARIOS[scenario], light=light)
-            except lupa52.LuaError as e:
-                problems.add(f"{w}x{h} {scenario}: Lua error: {e}")
-                continue
+        # The MK3's internal module, or the MK2's Ranger Micro, and what the
+        # ELRS panel should then show.
+        if w >= 800:
+            make_module = fake_elrs.mk3_internal
+            elrs_texts = ["500Hz", "2.4G", "250mW", "Dyn", "Std", "1:64"]
+        else:
+            make_module = fake_elrs.mk2_ranger_micro
+            elrs_texts = ["250Hz", "100mW", "1:16", "5859bps"]
+
+        def screenshot(scenario, light):
+            fresh_radio(make_module())
+            outputs, telemetry = SCENARIOS[scenario]
+            wgt = new_widget(w, h, light)
+            screen = run(wgt, w, h, fonts, frames=80, outputs=outputs, telemetry=telemetry)
             screen.app_mode_button()  # the zone is the whole screen, at 0,0
             img = screen.img
             if args.scale > 1:
@@ -448,38 +510,80 @@ def main():
             img.save(out / name)
             written.append(out / name)
 
-        # Lifecycle checks, frame by frame on one widget instance.
-        try:
-            fresh_radio()
-            # Sensors only exist once telemetry has started.
-            wgt, s = render(w, h, fonts, OUT_IDLE, None)
+        def check_telemetry():
+            fresh_radio(make_module())
+            wgt = new_widget(w, h)
+            s = run(wgt, w, h, fonts)
             expect(s, "NO LINK", "no telemetry yet")
             tlm = dict(TLM_GOOD, RxBt=16.8)
-            _, s = render(w, h, fonts, OUT_IDLE, tlm, wgt)
+            s = run(wgt, w, h, fonts, telemetry=tlm)
             expect(s, "4S 16.8V", "cell count from a full 4S pack")
             expect(s, "READY", "Betaflight '*' suffix means ready to arm")
-            _, s = render(w, h, fonts, OUT_IDLE, dict(tlm, RxBt=13.2), wgt)
+            s = run(wgt, w, h, fonts, telemetry=dict(tlm, RxBt=13.2))
             expect(s, "4S 13.2V", "cell count kept while the pack sags")
-            _, s = render(w, h, fonts, OUT_IDLE, None, wgt)
+            s = run(wgt, w, h, fonts)
             expect(s, "NO LINK", "link lost")
-            _, s = render(w, h, fonts, OUT_IDLE, dict(tlm, RxBt=25.2, FM="AIR"), wgt)
+            s = run(wgt, w, h, fonts, telemetry=dict(tlm, RxBt=25.2, FM="AIR"))
             expect(s, "6S 25.2V", "cell count worked out again after a pack swap")
             expect(s, "ARMED", "no suffix means armed")
-            _, s = render(w, h, fonts, OUT_IDLE, dict(tlm, RxBt=0.1, FM="!FS!"), wgt)
+            s = run(wgt, w, h, fonts, telemetry=dict(tlm, RxBt=0.1, FM="!FS!"))
             expect(s, "NO PACK", "FC on USB power")
             expect(s, "FAILSAFE", "Betaflight failsafe")
             # Output names edited while the widget was hidden must show up.
             radio.names[4] = "ARMSW"
             widget.background(wgt)
-            _, s = render(w, h, fonts, OUT_IDLE, None, wgt)
+            s = run(wgt, w, h, fonts)
             expect(s, "ARMSW", "output names re-read after background()")
             # A zone too small for the layout must not crash.
             wgt.zone.w, wgt.zone.h = 200, 100
-            render(200, 100, fonts, OUT_IDLE, None, wgt)
-        except lupa52.LuaError as e:
-            problems.add(f"{w}x{h} lifecycle: Lua error: {e}")
-        finally:
-            fresh_radio()
+            run(wgt, 200, 100, fonts)
+
+        def check_elrs():
+            module = make_module()
+            fresh_radio(module)
+            wgt = new_widget(w, h)
+            s = run(wgt, w, h, fonts, frames=80)
+            for text in elrs_texts:
+                expect(s, text, "ELRS setting read from the module")
+            # The scan stops after the last field it needs, and only reads
+            # every chunk of the fields it keeps.
+            names = {f["name"] for f in module.fields}
+            kept = {module.id_of(n) for n in ("RF Band", "Packet Rate", "Telem Ratio",
+                                              "Max Power", "Dynamic") if n in names}
+            if max(i for i, _ in module.reads) > max(kept):
+                problems.add(f"{w}x{h}: the ELRS scan read past the fields it needs")
+            if {i for i, c in module.reads if c > 0} - kept:
+                problems.add(f"{w}x{h}: the ELRS scan read whole fields it doesn't need")
+            # Settings changed while a tool ran are read again afterwards.
+            module.set("Max Power", 5)
+            radio.clock += 300
+            s = run(wgt, w, h, fonts, frames=40)
+            expect(s, "500mW", "ELRS settings re-read after a tool ran")
+            # A tap on the ELRS panel (in fullscreen) reads everything again.
+            module.set("Telem Ratio", 1)
+            r = wgt.lay.elrs
+            centre = (int(r.x + r.w // 2), int(r.y + r.h // 2))
+            s = run(wgt, w, h, fonts, frames=80, event=tap, touch=centre)
+            expect(s, "Off", "ELRS settings re-read after a tap on the panel")
+            # A lost reply is asked for again.
+            module = make_module()
+            module.drop = {(module.id_of("Telem Ratio"), 0)}
+            fresh_radio(module)
+            s = run(new_widget(w, h), w, h, fonts, frames=120)
+            expect(s, elrs_texts[-2], "a lost ELRS reply is asked for again")
+            # No CRSF module, a module that doesn't answer, one that isn't ELRS.
+            for module, text in ((None, "NO MODULE"), (make_module(silent=True), "NO REPLY"),
+                                 (make_module(serial=b"TBS\0"), "NOT ELRS")):
+                fresh_radio(module)
+                s = run(new_widget(w, h), w, h, fonts, frames=100)
+                expect(s, text, "ELRS panel message")
+
+        for scenario, light in (("idle", False), ("linked", False), ("warnings", False),
+                                ("linked", True)):
+            guarded(f"{w}x{h} {scenario}", lambda: screenshot(scenario, light))
+        guarded(f"{w}x{h} telemetry checks", check_telemetry)
+        guarded(f"{w}x{h} ELRS checks", check_elrs)
+        fresh_radio()
 
     for name in lua.globals().GLOBAL_WRITES.values():
         problems.add(f"widget created a global variable: {name}")

@@ -1,0 +1,168 @@
+"""A pretend ExpressLRS TX module, for utils/preview.py.
+
+Answers CRSF device pings and parameter reads the way the ELRS firmware does
+(3.x src/lib/LUA/lua.cpp, 4.x src/lib/tx-crsf): each parameter is sent as
+parent, type, name and type-specific data, split into chunks of at most 56
+bytes. The receiver answers pings too, as it does once linked.
+"""
+
+import math
+
+PING, DEVICE_INFO, PARAM_ENTRY, PARAM_READ, ELRS_STATUS = 0x28, 0x29, 0x2B, 0x2C, 0x2E
+TX_MODULE, RECEIVER, RADIO = 0xEE, 0xEC, 0xEA
+UINT8, TEXT_SELECTION, FOLDER, INFO, COMMAND = 0, 9, 11, 12, 13
+CHUNK = 56
+
+
+def cstr(text):
+    return list(text.encode()) + [0]
+
+
+def sel(name, options, value, unit="", parent=0):
+    return {"type": TEXT_SELECTION, "name": name, "options": options,
+            "value": value, "unit": unit, "parent": parent}
+
+
+def folder(name, dyn=None, parent=0):
+    return {"type": FOLDER, "name": name, "dyn": dyn, "parent": parent}
+
+
+def uint8(name, value, lo, hi, parent=0, hidden=False):
+    return {"type": UINT8, "name": name, "value": value, "min": lo, "max": hi,
+            "parent": parent, "hidden": hidden}
+
+
+def command(name, parent=0):
+    return {"type": COMMAND, "name": name, "parent": parent}
+
+
+def info(name, text, hidden=False):
+    return {"type": INFO, "name": name, "text": text, "hidden": hidden}
+
+
+class FakeElrs:
+    def __init__(self, name, fields, serial=b"ELRS", silent=False):
+        self.name, self.fields, self.serial, self.silent = name, fields, serial, silent
+        self.reads = []    # (field id, chunk) of every parameter read
+        self.drop = set()  # (field id, chunk) replies to lose, once each
+
+    def id_of(self, name):
+        return next(i + 1 for i, f in enumerate(self.fields) if f["name"] == name)
+
+    def set(self, name, value):
+        self.fields[self.id_of(name) - 1]["value"] = value
+
+    def device_info(self, origin, name, field_count, serial):
+        return ([RADIO, origin] + cstr(name) + list(serial) + [0, 0, 0, 0]
+                + [0, 4, 1, 0] + [field_count, 1])
+
+    def payload(self, fid):
+        f = self.fields[fid - 1]
+        t = f["type"]
+        out = [f.get("parent", 0), t | (0x80 if f.get("hidden") else 0)]
+        out += cstr((f.get("dyn") or f["name"]) if t == FOLDER else f["name"])
+        if t == TEXT_SELECTION:
+            out += cstr(f["options"]) + [f["value"], 0, f["options"].count(";"), 0]
+            out += cstr(f["unit"])
+        elif t == UINT8:
+            out += [f["value"], f["min"], f["max"], 0] + cstr("")
+        elif t == FOLDER:
+            out += [i + 1 for i, g in enumerate(self.fields) if g.get("parent") == fid] + [0xFF]
+        elif t == COMMAND:
+            out += [0, 200] + cstr("")
+        elif t == INFO:
+            out += cstr(f["text"])
+        return out
+
+    def handle(self, command_id, data):
+        """Replies to one frame from the radio, as (command, data) pairs."""
+        if self.silent:
+            return []
+        if command_id == PING:
+            return [(DEVICE_INFO, self.device_info(TX_MODULE, self.name, len(self.fields), self.serial)),
+                    (DEVICE_INFO, self.device_info(RECEIVER, "RP3 RX", 12, b"ELRS"))]
+        if command_id != PARAM_READ or data[0] != TX_MODULE:
+            return []
+        fid, chunk = data[2], data[3]
+        if (fid, chunk) in self.drop:
+            self.drop.discard((fid, chunk))
+            return []
+        if not 1 <= fid <= len(self.fields):
+            return []
+        self.reads.append((fid, chunk))
+        body = self.payload(fid)
+        chunks = math.ceil(len(body) / CHUNK)
+        if chunk >= chunks:
+            return []
+        part = body[chunk * CHUNK:(chunk + 1) * CHUNK]
+        return [(PARAM_ENTRY, [RADIO, TX_MODULE, fid, chunks - chunk - 1] + part)]
+
+
+TLM = "Std;Off;1:128;1:64;1:32;1:16;1:8;1:4;1:2;Race"
+POWER = "10;25;50;100;250;500;1000"
+DYNAMIC = "Off;Dyn;AUX9;AUX10;AUX11;AUX12"
+
+# ELRS 4.x LR1121 rates. The firmware blanks the other band's rates, so the
+# list has empty entries; the value indexes into the whole list.
+_LR1121 = ["100Hz Full(-112dBm)", "150Hz(-112dBm)", "50Hz(-115dBm)", "100Hz Full(-112dBm)",
+           "150Hz(-112dBm)", "250Hz(-108dBm)", "333Hz Full(-105dBm)", "500Hz(-105dBm)",
+           "DK250(-103dBm)", "DK500(-103dBm)", "K1000(-103dBm)", "D50Hz(-112dBm)",
+           "25Hz(-123dBm)", "50Hz(-120dBm)", "100Hz(-117dBm)", "100Hz Full(-112dBm)",
+           "200Hz(-112dBm)", "200Hz Full(-111dBm)", "250Hz(-111dBm)", "K1000 Full(-101dBm)"]
+RATES_LR1121_24 = ";".join(r if 2 <= i <= 10 else "" for i, r in enumerate(_LR1121))
+RATES_SX1280 = ("50Hz(-115dBm);100Hz Full(-112dBm);150Hz(-112dBm);250Hz(-108dBm);"
+                "333Hz Full(-105dBm);500Hz(-105dBm);D250(-104dBm);D500(-104dBm);"
+                "F500(-104dBm);F1000(-104dBm)")
+
+
+def mk3_internal(**kw):
+    """TX16S MK3 internal module: ELRS 4.x on an LR1121, 500Hz on 2.4GHz."""
+    return FakeElrs("RM TX16S MK3", [
+        sel("RF Band", "915MHz;2.4GHz;X-Band", 1),
+        sel("Packet Rate", RATES_LR1121_24, 7),
+        sel("Telem Ratio", TLM, 0, " (1:64)"),
+        sel("Switch Mode", "8ch;16ch Rate/2;12ch Mixed", 0),
+        sel("Antenna Mode", "Gemini;Ant 1;Ant 2;Switch", 0),
+        sel("Link Mode", "Normal;MAVLink", 0),
+        sel("Model Match", "Off;On", 0, " (ID: 1)"),
+        folder("TX Power", "TX Power (250 Dyn)"),
+        sel("Max Power", POWER, 4, "mW", parent=8),
+        sel("Dynamic", DYNAMIC, 1, parent=8),
+        sel("Fan Thresh", "10mW;25mW;50mW;100mW;250mW;500mW;1000mW;2000mW;Never", 3, parent=8),
+        folder("VTX Administrator", "VTX Admin (R:3:1)"),
+        sel("Band/Enable", "Disabled;A;B;E;F;R;L", 5, parent=12),
+        uint8("Channel", 3, 1, 8, parent=12),
+        sel("Pwr Lvl", "-;1;2;3;4;5;6;7;8", 1, parent=12),
+        sel("Pitmode", "Off;On", 0, parent=12),
+        command("Send VTx", parent=12),
+        folder("WiFi Connectivity"),
+        command("Enable WiFi", parent=18),
+        command("Enable Rx WiFi", parent=18),
+        command("BLE Joystick"),
+        command("Bind"),
+        info("4.1.0", "FCC915"),
+    ], **kw)
+
+
+def mk2_ranger_micro(**kw):
+    """Ranger Micro on the MK2: ELRS 3.x on an SX1280, 250Hz, telemetry 1:16."""
+    return FakeElrs("RadioMaster Ranger Micro", [
+        sel("Packet Rate", RATES_SX1280, 3),
+        sel("Telem Ratio", TLM, 5, " (5859bps)"),
+        sel("Switch Mode", "Wide;Hybrid", 1),
+        sel("Model Match", "Off;On", 0, " (ID: 1)"),
+        folder("TX Power", "TX Power (100)"),
+        sel("Max Power", POWER, 3, "mW", parent=5),
+        sel("Dynamic", DYNAMIC, 0, parent=5),
+        folder("VTX Administrator"),
+        sel("Band", "Off;A;B;E;F;R;L", 0, parent=8),
+        uint8("Channel", 1, 1, 8, parent=8),
+        sel("Pwr Lvl", "-;1;2;3;4;5;6;7;8", 0, parent=8),
+        sel("Pitmode", "Off;On", 0, parent=8),
+        command("Send VTx", parent=8),
+        folder("WiFi Connectivity"),
+        command("Enable WiFi", parent=14),
+        command("Bind"),
+        info("Bad/Good", "0/250", hidden=True),
+        info("3.6.3", "ISM2G4"),
+    ], **kw)

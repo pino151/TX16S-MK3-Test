@@ -137,12 +137,16 @@ function M.compute(w, h, auxCount, atOrigin)
     { "VIDEO", "R8", 62 },
     { "PWR", "8", 38 },
   }, corner - pad)
-  -- Power over 500mW will be shown as "1W"/"2W", so "500mW" is the widest.
-  L.elrs = panel(2 * pad + videoW, pad, innerW - videoW - pad, topH, pad, labelH, {
-    { "RATE", "500Hz", 1 },
+  -- Power from 1000mW is shown as "1W"/"2W", so "500mW" is the widest.
+  local elrsX, elrsW = 2 * pad + videoW, innerW - videoW - pad
+  L.elrs = panel(elrsX, pad, elrsW, topH, pad, labelH, {
+    { "RATE", "DK500", 1 },
     { "TX PWR", "500mW", 1 },
-    { "TELEM", "1:128", 1 },
+    { "TLM", "1:128", 1 },
   }, pad, true)
+  L.elrsIdle = panel(elrsX, pad, elrsW, topH, pad, labelH, {
+    { "ELRS", "NO MODULE", 1 },
+  })
 
   -- Bottom strip: QUAD status, as four cells once linked, else "NO LINK".
   local stripY = h - pad - stripH
