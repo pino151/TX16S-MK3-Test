@@ -140,8 +140,8 @@ function M.compute(w, h, auxCount, atOrigin)
   -- Top band: VIDEO on the left, ELRS on the right.
   local videoW = floor(innerW * 0.36)
   L.video = panel(pad, pad, videoW, topH, pad, labelH, {
-    { "VIDEO", "R8", 62 },
-    { "PWR", "8", 38 },
+    { "VIDEO", "R8", 58 },
+    { "PWR", "200", 42 },  -- the FC's power labels, e.g. "25", "200"
   }, corner - pad)
   -- Power from 1000mW is shown as "1W"/"2W", so "500mW" is the widest.
   local elrsX, elrsW = 2 * pad + videoW, innerW - videoW - pad

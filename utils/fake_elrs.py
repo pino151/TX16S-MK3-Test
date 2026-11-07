@@ -48,6 +48,13 @@ class FakeElrs:
         self.reads = []    # (field id, chunk) of every parameter read
         self.writes = []   # (field name, value) of every parameter write
         self.drop = set()  # (field id, chunk) replies to lose, once each
+        self.vtx_sends = 0  # "Send VTx" presses
+
+    def vtx_admin(self):
+        """VTX Administrator's (band, channel, power): what ELRS sends to the
+        FC on "Send VTx" and when a quad connects. Band 0 = Off."""
+        band = "Band/Enable" if any(f["name"] == "Band/Enable" for f in self.fields) else "Band"
+        return self.value(band), self.value("Channel"), self.value("Pwr Lvl")
 
     def id_of(self, name):
         return next(i + 1 for i, f in enumerate(self.fields) if f["name"] == name)
@@ -115,6 +122,8 @@ class FakeElrs:
         if self.read_only:
             return []
         if f["type"] == COMMAND:
+            if f["name"] == "Send VTx" and value == 1:
+                self.vtx_sends += 1
             body = self.payload(fid, status=2, info="Sending...")  # 2 = executing
             return [(PARAM_ENTRY, [RADIO, TX_MODULE, fid, 0] + body)]
         f["value"] = value
@@ -189,3 +198,92 @@ def mk2_ranger_micro(**kw):
         info("Bad/Good", "0/250", hidden=True),
         info("3.6.3", "ISM2G4"),
     ], **kw)
+
+
+# --- The quad's flight controller -------------------------------------------
+
+MSP_REQ, MSP_RESP, MSP_WRITE = 0x7A, 0x7B, 0x7C
+FC = 0xC8
+MSP_VTX_CONFIG, MSP_VTXTABLE_BAND, MSP_VTXTABLE_POWERLEVEL = 88, 137, 138
+
+# An HDZero-style Betaflight VTX table: bands A and B empty, E1, F2, F4 and
+# R1-R8, two power levels. (Illustrative; check `vtxtable` on your own FC.)
+HDZERO_BANDS = [
+    ("BOSCAM_A", "A", [0] * 8),
+    ("BOSCAM_B", "B", [0] * 8),
+    ("BOSCAM_E", "E", [5705, 0, 0, 0, 0, 0, 0, 0]),
+    ("FATSHARK", "F", [0, 5760, 0, 5800, 0, 0, 0, 0]),
+    ("RACEBAND", "R", [5658, 5695, 5732, 5769, 5806, 5843, 5880, 5917]),
+]
+HDZERO_POWERS = [(25, "25 "), (200, "200")]
+
+
+def u16(value):
+    return [value & 0xFF, (value >> 8) & 0xFF]
+
+
+class FakeFc:
+    """Betaflight answering MSP over CRSF the way src/main/telemetry/
+    msp_shared.c frames replies: status (start flag, sequence, version),
+    size and command, then payload, in chunks of at most `chunk` bytes."""
+
+    def __init__(self, band=5, ch=3, power=1, pit=0, vtx_type=5,
+                 bands=HDZERO_BANDS, powers=HDZERO_POWERS, chunk=58):
+        self.band, self.ch, self.power, self.pit, self.vtx_type = band, ch, power, pit, vtx_type
+        self.bands, self.powers, self.chunk = bands, powers, chunk
+        self.seq = 0
+        self.requests = []  # MSP commands asked for
+        self.drop = set()   # commands whose next reply is lost
+
+    def freq(self):
+        if 1 <= self.band <= len(self.bands) and 1 <= self.ch <= 8:
+            return self.bands[self.band - 1][2][self.ch - 1]
+        return 0
+
+    def apply_vtx_admin(self, band, ch, power):
+        """MSP_SET_VTX_CONFIG from ELRS VTX Admin: band/channel index, power."""
+        self.band, self.ch = band, ch
+        if power:
+            self.power = power
+
+    def reply(self, cmd, payload):
+        if cmd == MSP_VTX_CONFIG:
+            return ([self.vtx_type, self.band, self.ch, self.power, self.pit] + u16(self.freq())
+                    + [1, 0] + u16(0) + [1, len(self.bands), 8, len(self.powers)])
+        if cmd == MSP_VTXTABLE_BAND and payload and 1 <= payload[0] <= len(self.bands):
+            name, letter, freqs = self.bands[payload[0] - 1]
+            body = [payload[0], 8] + list(name.ljust(8).encode()) + [ord(letter), 1, 8]
+            for f in freqs:
+                body += u16(f)
+            return body
+        if cmd == MSP_VTXTABLE_POWERLEVEL and payload and 1 <= payload[0] <= len(self.powers):
+            value, label = self.powers[payload[0] - 1]
+            return [payload[0]] + u16(value) + [3] + list(label.ljust(3).encode())
+        return None  # Betaflight answers unknown or invalid requests with an error
+
+    def handle(self, data):
+        """One request frame (dest, origin, status, size, cmd, payload) ->
+        reply frames (dest, origin, MSP chunk)."""
+        status = data[2]
+        if not status & 0x10:
+            return []  # only single-chunk requests are sent to it
+        version = (status >> 5) & 0x03
+        size, cmd = data[3], data[4]
+        self.requests.append(cmd)
+        if cmd in self.drop:
+            self.drop.discard(cmd)
+            return []
+        body = self.reply(cmd, data[5:5 + size])
+        error = body is None
+        body = body or []
+        frames, first = [], True
+        while first or body:
+            if first:
+                head = [0x10 | self.seq | (version << 5) | (0x80 if error else 0), len(body), cmd]
+            else:
+                head = [self.seq | (version << 5)]
+            self.seq = (self.seq + 1) % 16
+            room = self.chunk - len(head)
+            frames.append((MSP_RESP, [0xEA, FC] + head + body[:room]))
+            body, first = body[room:], False
+        return frames

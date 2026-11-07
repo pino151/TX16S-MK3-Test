@@ -317,6 +317,7 @@ class Radio:
         self.discovered = set()    # sensors EdgeTX has created so far
         self.last = {}             # last value of each sensor
         self.module = None         # fake_elrs.FakeElrs, or None: no CRSF module
+        self.fc = None             # fake_elrs.FakeFc: the quad's FC, reached while linked
         self.crsf_in = []          # (ready at tick, command, data) on the way in
         g = lua.globals()
         for name, value in CONSTANTS.items():
@@ -347,14 +348,32 @@ class Radio:
         self.crsf_in = [(0, fake_elrs.ELRS_STATUS, [0xEA, 0xEE, 0, 0, 0, 0, 0])] if module else []
 
     def crsf_push(self, command=None, data=None):
-        """nil without a CRSF module, else true. Replies arrive a tick later."""
+        """nil without a CRSF module, else true. Module replies arrive a tick
+        later. MSP requests go over the link to the FC (only while linked);
+        its replies come back slower, one telemetry chunk at a time."""
         if self.module is None:
             return None
-        if command is not None:
-            payload = [int(data[i]) for i in range(1, len(data) + 1)]
-            for reply in self.module.handle(int(command), payload):
-                self.crsf_in.append((self.clock + 1, *reply))
+        if command is None:
+            return True
+        command = int(command)
+        payload = [int(data[i]) for i in range(1, len(data) + 1)]
+        if command in (fake_elrs.MSP_REQ, fake_elrs.MSP_WRITE) and payload[0] == fake_elrs.FC:
+            if self.telemetry and self.fc:
+                for n, reply in enumerate(self.fc.handle(payload)):
+                    self.crsf_in.append((self.clock + 15 + 5 * n, *reply))
+            return True
+        sends = self.module.vtx_sends
+        for reply in self.module.handle(command, payload):
+            self.crsf_in.append((self.clock + 1, *reply))
+        if self.module.vtx_sends > sends:
+            self.vtx_admin_to_fc()
         return True
+
+    def vtx_admin_to_fc(self):
+        """ELRS VTX Admin sends its setting to the FC (if linked and on)."""
+        band, ch, power = self.module.vtx_admin()
+        if self.telemetry and self.fc and band:
+            self.fc.apply_vtx_admin(band, ch, power)
 
     def crsf_pop(self):
         for i, (ready, command, data) in enumerate(self.crsf_in):
@@ -366,10 +385,13 @@ class Radio:
     def set_telemetry(self, values):
         """Start (dict) or stop (None) the link. Like EdgeTX, sensors are
         created when their first value arrives and stay afterwards."""
+        was_linked = bool(self.telemetry)
         self.telemetry = values
         if values:
             self.discovered.update(values)
             self.last.update(values)
+            if not was_linked and self.module:
+                self.vtx_admin_to_fc()  # ELRS sends VTX Admin when a quad connects
 
     def get_rssi(self):
         lq = (self.telemetry or {}).get("RQly", 0)
@@ -472,10 +494,14 @@ def main():
             widget.refresh(wgt, ev, ts)
         return radio.screen
 
-    def fresh_radio(module=None):
+    def fresh_radio(module=None, fc=None):
         radio.names = dict(NAMES)
-        radio.discovered, radio.last = set(), {}
+        radio.discovered, radio.last, radio.telemetry = set(), {}, None
         radio.set_module(module)
+        radio.fc = fc
+
+    def lua_list(table):
+        return [table[i] for i in range(1, len(table) + 1)]
 
     def expect(screen, text, what):
         if text not in screen.texts:
@@ -492,12 +518,16 @@ def main():
         fonts = Fonts(args.fonts, "lrg" if w >= 800 else "std")
         # The MK3's internal module, or the MK2's Ranger Micro, and what the
         # ELRS panel should then show.
+        # The quad: Betaflight with an HDZero-style VTX table, on R3 (MK3,
+        # whose VTX Admin is R3) or R1 (MK2, whose VTX Admin is off).
         if w >= 800:
             make_module = fake_elrs.mk3_internal
             elrs_texts = ["500Hz", "2.4G", "250mW", "Dyn", "Std", "1:64"]
+            make_fc = lambda **kw: fake_elrs.FakeFc(**{"band": 5, "ch": 3, **kw})
         else:
             make_module = fake_elrs.mk2_ranger_micro
             elrs_texts = ["250Hz", "100mW", "1:16", "5859bps"]
+            make_fc = lambda **kw: fake_elrs.FakeFc(**{"band": 5, "ch": 1, **kw})
 
         def save(screen, label):
             img = screen.img
@@ -508,7 +538,7 @@ def main():
             written.append(out / name)
 
         def screenshot(scenario, light):
-            fresh_radio(make_module())
+            fresh_radio(make_module(), make_fc())
             outputs, telemetry = SCENARIOS[scenario]
             wgt = new_widget(w, h, light)
             screen = run(wgt, w, h, fonts, frames=80, outputs=outputs, telemetry=telemetry)
@@ -516,9 +546,11 @@ def main():
             save(screen, scenario + ("-light" if light else ""))
 
         def tap_on(wgt, rect, frames=2):
-            """A tap in the middle of a layout rectangle, in fullscreen."""
+            """A tap in the middle of a layout rectangle, in fullscreen. The
+            link (telemetry) stays as it is."""
             centre = (int(rect.x + rect.w // 2), int(rect.y + rect.h // 2))
-            return run(wgt, w, h, fonts, frames=frames, event=tap, touch=centre, fullscreen=True)
+            return run(wgt, w, h, fonts, frames=frames, telemetry=radio.telemetry, event=tap,
+                       touch=centre, fullscreen=True)
 
         def check_telemetry():
             fresh_radio(make_module())
@@ -646,12 +678,84 @@ def main():
             if wgt.vtx.ui != "main":
                 problems.add(f"{w}x{h}: the VTX picker opened without a module")
 
+        def check_fc():
+            module, fc = make_module(), make_fc()
+            fresh_radio(module, fc)
+            wgt = new_widget(w, h)
+            linked = dict(TLM_GOOD)
+            s = run(wgt, w, h, fonts, frames=120, telemetry=linked, fullscreen=True)
+            strip = wgt.vtx.strip
+            admin = module.vtx_admin()[0]
+            want = "R3" if admin else "R1"
+            expect(s, want, "the FC's VTX channel in the QUAD strip")
+            expect(s, "5732" if admin else "5658", "the FC's VTX frequency")
+            if strip.level != (1 if admin else 0):
+                problems.add(f"{w}x{h}: FC VTX cell level {strip.level}, expected "
+                             f"{'green: it matches VTX Admin' if admin else 'neutral: VTX Admin off'}")
+            # The picker uses the FC's table: no empty bands, its power labels,
+            # and channels it doesn't have greyed out (and ignored).
+            if lua_list(wgt.vtx.bandLabels) != ["R", "F", "E"]:
+                problems.add(f"{w}x{h}: picker bands {lua_list(wgt.vtx.bandLabels)} not from the FC table")
+            if lua_list(wgt.vtx.powerLabels) != ["-", "25", "200"]:
+                problems.add(f"{w}x{h}: picker powers {lua_list(wgt.vtx.powerLabels)} not from the FC table")
+            tap_on(wgt, wgt.lay.video)
+            f = lua_list(wgt.vtx.bandLabels).index("F") + 1
+            tap_on(wgt, wgt.pick.rows[1][f])
+            if [wgt.vtx.chanOk[c] for c in range(1, 9)] != [False, True, False, True] + [False] * 4:
+                problems.add(f"{w}x{h}: band F's channels not greyed out as in the FC table")
+            tap_on(wgt, wgt.pick.rows[2][1])  # F1 doesn't exist: ignored
+            tap_on(wgt, wgt.pick.rows[2][4])
+            tap_on(wgt, wgt.pick.rows[3][2])  # 25
+            s = tap_on(wgt, wgt.pick.ok)
+            expect(s, "F4  5800MHz  PWR 25", "picker choice with the FC's power label")
+            save(s, "confirm-fc")
+            # Sending while linked: the FC takes it, and turns green when read back.
+            s = tap_on(wgt, wgt.pick.ok, frames=120)
+            if (fc.band, fc.ch) != (4, 4):
+                problems.add(f"{w}x{h}: the FC didn't get F4 (has {fc.band}, {fc.ch})")
+            expect(s, "F4", "the FC's new channel after a send")
+            if wgt.vtx.strip.level != 1:
+                problems.add(f"{w}x{h}: FC VTX cell not green after a send it took")
+            save(s, "linked-sent")
+            # The FC on another channel than VTX Admin, then in pit mode, then
+            # without a VTX: each shows yellow at the next read.
+            fc.ch = 5
+            radio.clock += 1000
+            s = run(wgt, w, h, fonts, frames=30, telemetry=linked)
+            expect(s, "F5", "the FC's channel when it differs from VTX Admin")
+            if wgt.vtx.strip.level != 2:
+                problems.add(f"{w}x{h}: FC VTX cell not yellow when it differs from VTX Admin")
+            fc.pit = 1
+            radio.clock += 1000
+            s = run(wgt, w, h, fonts, frames=30, telemetry=linked)
+            expect(s, "PIT", "VTX in pit mode")
+            fc.vtx_type = 255
+            radio.clock += 1000
+            s = run(wgt, w, h, fonts, frames=30, telemetry=linked)
+            expect(s, "NO VTX", "FC without a VTX")
+            # A different quad after the link drops; its replies come in small
+            # chunks and the first answer is lost.
+            run(wgt, w, h, fonts, frames=10)
+            fc = make_fc(ch=7, chunk=12)
+            fc.drop = {fake_elrs.MSP_VTX_CONFIG}
+            radio.fc = fc
+            s = run(wgt, w, h, fonts, frames=200, telemetry=linked, fullscreen=True)
+            # VTX Admin is F4 since the send, so ELRS gives the new quad F4.
+            expect(s, "F4", "VTX Admin's channel on a newly connected quad")
+            if wgt.vtx.strip.level != 1:
+                problems.add(f"{w}x{h}: new quad on VTX Admin's channel not shown green")
+            if lua_list(wgt.vtx.bandLabels) != ["R", "F", "E"]:
+                problems.add(f"{w}x{h}: VTX table not read from chunked MSP replies")
+            tap_on(wgt, wgt.lay.video)
+            save(tap_on(wgt, wgt.lay.video), "picker-fc")
+
         for scenario, light in (("idle", False), ("linked", False), ("warnings", False),
                                 ("linked", True)):
             guarded(f"{w}x{h} {scenario}", lambda: screenshot(scenario, light))
         guarded(f"{w}x{h} telemetry checks", check_telemetry)
         guarded(f"{w}x{h} ELRS checks", check_elrs)
         guarded(f"{w}x{h} VTX checks", check_vtx)
+        guarded(f"{w}x{h} FC checks", check_fc)
         fresh_radio()
 
     for name in lua.globals().GLOBAL_WRITES.values():

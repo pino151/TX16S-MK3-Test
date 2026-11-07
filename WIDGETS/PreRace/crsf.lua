@@ -85,6 +85,9 @@ function M.new(wanted, required, aliases)
     ids = {},     -- name -> field id, kept for re-reads and writes
     version = 0,  -- goes up whenever a field is read
     writes = {},  -- { id, value } waiting to be sent
+    -- Frame type -> function(data) for other frames popped here (MSP
+    -- replies), as only one reader can pop the queue.
+    handlers = {},
     status = M.READING,
   }
   for i = 1, #wanted do
@@ -324,6 +327,8 @@ function M.update(s, allowReread)
       onDeviceInfo(s, data, now)
     elseif command == PARAM_ENTRY then
       onParamEntry(s, data, now)
+    elseif s.handlers[command] then
+      s.handlers[command](data)
     end
   end
 

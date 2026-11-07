@@ -27,9 +27,20 @@ local function buttonRow(x, y, w, h, n, gap)
   return row
 end
 
+local function longest(list)
+  local text = ""
+  for i = 1, #list do
+    if #list[i] > #text then
+      text = list[i]
+    end
+  end
+  return text
+end
+
 -- `fit(text, maxW, maxH)` returns the largest font that fits (layout.fit).
--- `counts`: number of band, channel and power buttons.
-function M.layout(w, h, fit, counts)
+-- `v` is the vtx.lua state: its bands and power labels set the button rows
+-- (they come from the FC's VTX table once it's read).
+function M.layout(w, h, fit, v, channelLabels)
   local pad = max(2, floor(h / 80))
   local labelW = lcd.sizeText("POWER", SMLSIZE) + 2 * pad
   local titleH = floor(h * 0.2)
@@ -37,25 +48,33 @@ function M.layout(w, h, fit, counts)
   local P = {
     w = w,
     h = h,
+    options = v.options,
     title = { x = pad, y = pad, w = w - 2 * pad, h = titleH },
     rows = {},
     labels = {},
   }
   local y = 2 * pad + titleH
   P.textY, P.textH = y, 3 * rowH + 2 * pad  -- confirm screen text area
+  local rowLabels = { v.bandLabels, channelLabels, v.powerLabels }
+  local fontH
   for r = 1, 3 do
-    P.rows[r] = buttonRow(pad + labelW, y, w - 2 * pad - labelW, rowH, counts[r], pad)
+    local row = buttonRow(pad + labelW, y, w - 2 * pad - labelW, rowH, #rowLabels[r], pad)
+    P.rows[r] = row
     P.labels[r] = { x = pad, y = y + floor(rowH / 2) }
     y = y + rowH + pad
+    -- One font for every button: the one that fits the tightest row.
+    local font = fit(longest(rowLabels[r]), (row[1] and row[1].w or rowH) - pad, rowH - pad)
+    local _, fh = lcd.sizeText("8", font)
+    if not fontH or fh < fontH then
+      P.buttonFont, fontH = font, fh
+    end
   end
   local half = floor((w - 3 * pad) / 2)
   P.cancel = { x = pad, y = y, w = half, h = rowH }
   P.ok = { x = 2 * pad + half, y = y, w = half, h = rowH }
 
-  local narrowest = P.rows[3][1].w
-  P.buttonFont = fit("8", narrowest - pad, rowH - pad)
   P.actionFont = fit("CONFIRM", half - 2 * pad, rowH - pad)
-  P.titleFont = fit("R8  5917MHz  PWR 8", P.title.w - 2 * pad, titleH - pad)
+  P.titleFont = fit("R8  5917MHz  PWR 200", P.title.w - 2 * pad, titleH - pad)
   local lineH = floor(P.textH / 3)
   P.lineFonts = {
     fit(CONFIRM_LINES[1], w - 2 * pad, lineH),
@@ -66,9 +85,14 @@ function M.layout(w, h, fit, counts)
   return P
 end
 
-local function button(r, text, font, selected, c)
+-- `selected` fills the button; `disabled` (a channel the FC's VTX table
+-- doesn't have) draws it as an outline with dim text.
+local function button(r, text, font, selected, c, disabled)
   local color = c.fg
-  if selected then
+  if disabled then
+    drawRect(r.x, r.y, r.w, r.h, c.line)
+    color = c.line
+  elseif selected then
     fillRect(r.x, r.y, r.w, r.h, c.accent)
     color = c.bg
   else
@@ -78,7 +102,7 @@ local function button(r, text, font, selected, c)
   drawText(r.x + floor(r.w / 2), r.y + floor(r.h / 2), text, font + CENTER + VCENTER + color)
 end
 
--- `v` is the vtx.lua state, `vtx` the module (for the button labels).
+-- `v` is the vtx.lua state, `vtx` the module (for the channel labels).
 function M.draw(P, v, vtx, c)
   fillRect(0, 0, P.w, P.h, c.bg)
   local t = P.title
@@ -101,13 +125,13 @@ function M.draw(P, v, vtx, c)
   end
   local bands, chans, powers = P.rows[1], P.rows[2], P.rows[3]
   for i = 1, #bands do
-    button(bands[i], vtx.BAND_LABELS[i], P.buttonFont, vtx.BANDS[i] == s.band, c)
+    button(bands[i], v.bandLabels[i], P.buttonFont, v.bands[i] == s.band, c)
   end
   for i = 1, #chans do
-    button(chans[i], vtx.CHANNEL_LABELS[i], P.buttonFont, i == s.ch, c)
+    button(chans[i], vtx.CHANNEL_LABELS[i], P.buttonFont, i == s.ch, c, not v.chanOk[i])
   end
   for i = 1, #powers do
-    button(powers[i], vtx.POWER_LABELS[i], P.buttonFont, i - 1 == s.pwr, c)
+    button(powers[i], v.powerLabels[i], P.buttonFont, i - 1 == s.pwr, c)
   end
   button(P.cancel, "CANCEL", P.actionFont, false, c)
   button(P.ok, "SEND", P.actionFont, true, c)

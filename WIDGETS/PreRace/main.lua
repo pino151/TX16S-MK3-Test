@@ -1,7 +1,7 @@
 -- Pre-race check dashboard. See WIDGET_SPEC.md in the repo.
--- Build steps 1-4: layout, live sticks and aux bars with output names, the
--- QUAD telemetry strip, ELRS settings read from the TX module, and the VTX
--- channel picker that sends through ELRS VTX Administrator.
+-- Live sticks and aux bars with output names, the QUAD telemetry strip, ELRS
+-- settings read from the TX module, a VTX channel picker that sends through
+-- ELRS VTX Administrator, and the FC's VTX setting read back over MSP.
 
 local DIR = "/WIDGETS/PreRace/"
 
@@ -9,7 +9,7 @@ local DIR = "/WIDGETS/PreRace/"
 -- They are loaded on the first create() so the widget costs almost nothing
 -- unless it is actually placed on a screen.
 local mods
-local MODULES = { "chans", "layout", "draw", "telem", "crsf", "elrs", "vtx", "picker" }
+local MODULES = { "chans", "layout", "draw", "telem", "crsf", "elrs", "msp", "vtx", "picker" }
 
 local function loadModules()
   if not mods then
@@ -41,8 +41,13 @@ local function create(zone, opts)
     namesStale = true,
     telem = m.telem.new(),
     elrs = m.elrs.new(m.crsf),
+    msp = m.msp.new(),
     vtx = m.vtx.new(),
   }
+  -- The ELRS reader pops every CRSF frame, so it hands MSP replies on.
+  wgt.elrs.link.handlers[m.msp.MSP_RESP] = function(data)
+    m.msp.handle(wgt.msp, data)
+  end
   local t = wgt.telem
   wgt.stripCells = { t.link, t.pack, t.fc, wgt.vtx.strip }  -- QUAD strip order
   applyOptions(wgt, opts)
@@ -53,13 +58,13 @@ local function update(wgt, opts)
   applyOptions(wgt, opts)
 end
 
--- Telemetry, the ELRS reader and VTX sends keep running whether or not the
--- widget is visible. The ELRS settings aren't re-read periodically while armed.
+-- Telemetry, the ELRS reader, VTX sends and FC reads keep running whether or
+-- not the widget is visible. Nothing is polled periodically while armed.
 local function updateData(wgt)
-  local m = mods
-  m.telem.update(wgt.telem, wgt.options.Cells)
-  m.elrs.update(wgt.elrs, not wgt.telem.armed)
-  m.vtx.update(wgt.vtx, m.crsf, wgt.elrs.link)
+  local m, t = mods, wgt.telem
+  m.telem.update(t, wgt.options.Cells)
+  m.elrs.update(wgt.elrs, not t.armed)
+  m.vtx.update(wgt.vtx, m.crsf, wgt.elrs.link, m.msp, wgt.msp, t.linked, t.armed)
 end
 
 -- Only called while the widget is hidden, e.g. while the user is in the
@@ -86,10 +91,12 @@ local function mainLayout(wgt)
   return lay
 end
 
+-- The picker's layout, made again when the zone or the choices change (the
+-- FC's VTX table sets the bands and power levels).
 local function pickerLayout(wgt)
-  local m, zone, p = mods, wgt.zone, wgt.pick
-  if not p or p.w ~= zone.w or p.h ~= zone.h then
-    p = m.picker.layout(zone.w, zone.h, m.layout.fit, m.vtx.COUNTS)
+  local m, zone, p, v = mods, wgt.zone, wgt.pick, wgt.vtx
+  if not p or p.w ~= zone.w or p.h ~= zone.h or p.options ~= v.options then
+    p = m.picker.layout(zone.w, zone.h, m.layout.fit, v, m.vtx.CHANNEL_LABELS)
     wgt.pick = p
   end
   return p

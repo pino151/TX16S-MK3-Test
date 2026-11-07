@@ -41,7 +41,11 @@ Lay the screen out in zones. Suggested arrangement (Claude may propose a better 
   - CONFIRM writes Band, Channel and Pwr Lvl to the module, presses "Send VTx", waits 0.3 s
     and reads them back. While that runs the channel shows grey; then green if the module holds
     the new values, red if not (or after 5 s without an answer), for 5 s.
-  - Later (step 5): grey out channels the FC's vtxtable marks as unsupported (frequency 0).
+  - Once the FC's VTX table has been read (linked), the picker follows it: the FC's band
+    letters (ELRS sends a band number, the FC looks it up in its own table), only bands with
+    a frequency, channels the table doesn't have greyed out and ignored, and the FC's power
+    labels (e.g. "25", "200") instead of 1–8. The VIDEO panel uses the same letters,
+    frequencies and power labels. Until then: Betaflight's default table.
 - **Top right: ELRS.** Packet rate, TX power and telemetry ratio. Display only, no editing.
   Each value has a detail beside its label: the rest of the rate name plus the RF band
   ("Full", "2.4G", "Full 900M"), dynamic power ("Dyn" or its AUX switch), and the telemetry
@@ -70,9 +74,11 @@ Lay the screen out in zones. Suggested arrangement (Claude may propose a better 
   - FC: from the `FM` sensor. While disarmed Betaflight adds `*` (ready to arm), `!` (arming
     blocked) or `?` (GPS rescue not ready), shown as READY (green) or NO ARM / NO GPS (yellow).
     No suffix means armed: ARMED (red). `!FS!` shows !FS! / FAILSAFE (red). Detail: flight mode.
-  - VTX: the band/channel/frequency the FC reports over MSP (see Q1, step 5). Until then: the
-    module's VTX Admin setting with "SENT" (ELRS sends it when a quad connects, but nothing
-    confirms it arrived), or OFF.
+  - VTX: the band/channel the FC reports over MSP, with its frequency. Green when it matches
+    VTX Admin (confirmed), yellow when it differs, white when VTX Admin is off. "PIT" (yellow)
+    when the VTX is in pit mode, "NO VTX" (yellow) when the FC has no VTX device. Before the
+    FC has answered: the module's VTX Admin setting with "SENT" (ELRS sends it when a quad
+    connects, but nothing confirms it arrived), or OFF.
 
 Touch and screen size:
 - **Touch only works in fullscreen.** In App mode the widget fills the screen but gets no touch
@@ -106,7 +112,10 @@ Widget options (max 5):
   RFMD/TPWR sensors can be used as a cross-check.
 - VTX channel set: write the ELRS "VTX Administrator" band/channel parameters on the TX module,
   then trigger "Send VTx". Here is an example of an edgetx lua script that does this: https://github.com/Saqoosha/EasyVTXch
-- VTX channel read-back: ask the FC with `MSP_VTX_CONFIG` over CRSF once linked (Q1).
+- VTX channel read-back: once linked, ask the FC with `MSP_VTX_CONFIG` over CRSF (Q1), then
+  read its VTX table once per connection (`MSP_VTXTABLE_BAND` for bands 1–6, which are the
+  ones ELRS can send, and `MSP_VTXTABLE_POWERLEVEL`). The setting is asked for again every
+  10 s and 2.5 s after a send, never while armed. One request at a time, 3 s timeout, 3 tries.
 
 ## Behaviour
 - Never block. CRSF parameter reads happen gradually across refresh/background calls.
@@ -170,11 +179,10 @@ Caveats:
   power and telemetry ratio are per model). While Band isn't Off, ELRS **re-sends it every time
   any quad connects**.
 
-What to show:
-- After sending: "sent R3".
-- When the MSP reply matches: "FC R3 · 5732 MHz ✓". Only this state may be called confirmed.
-- When it doesn't match: a clear warning with what the FC reports.
-- No MSP reply (no link, telemetry off): stay on "sent R3".
+What to show (as built: the QUAD strip's VTX cell, see Layout):
+- Before the FC answers (no link, telemetry off): VTX Admin's setting with "SENT".
+- When the FC's setting matches VTX Admin: green. Only this state counts as confirmed.
+- When it doesn't match: yellow, with what the FC reports.
 
 ### Q2. ELRS parameter names, 3.x vs 4.x
 Field IDs are assigned when the module boots and differ between firmware versions and hardware,
@@ -258,7 +266,7 @@ Protocol (same in 3.x and 4.x):
 2. Quad telemetry status strip. *(Done: `telem.lua`.)*
 3. Reading ELRS settings over CRSF. *(Done: `crsf.lua`, `elrs.lua`.)*
 4. VTX channel picker and send. *(Done: `vtx.lua`, `picker.lua`.)*
-5. VTX read-back from the FC over MSP.
+5. VTX read-back from the FC over MSP. *(Done: `msp.lua`, FC part of `vtx.lua`.)*
 
 Steps 1–2 can be tested in Companion. Steps 3–5 need the real radio (and a quad for 5): in
 Companion no module answers CRSF reads.
