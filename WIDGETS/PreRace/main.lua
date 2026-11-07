@@ -39,6 +39,7 @@ local function create(zone, opts)
     zone = zone,
     aux = m.chans.auxList(),
     namesStale = true,
+    page = "main",  -- compact layout only: "main" or "aux"
     telem = m.telem.new(),
     elrs = m.elrs.new(m.crsf),
     msp = m.msp.new(),
@@ -108,7 +109,9 @@ end
 
 -- Events only arrive in fullscreen (long-press the widget to get there).
 -- Main screen: a tap on the VIDEO panel opens the VTX picker; a tap on the
--- ELRS panel, or ENTER, reads the ELRS settings again.
+-- ELRS panel, or ENTER, reads the ELRS settings again. In the compact
+-- layout a tap on the middle band shows the aux page, and any tap there
+-- comes back.
 -- Picker: taps choose and send; EXIT closes it.
 local function onEvent(wgt, event, touchState)
   local m, v = mods, wgt.vtx
@@ -124,10 +127,14 @@ local function onEvent(wgt, event, touchState)
     end
   elseif tap then
     local lay, x, y = wgt.lay, touchState.x, touchState.y
-    if inside(lay.video, x, y) then
+    if lay.compact and wgt.page == "aux" then
+      wgt.page = "main"
+    elseif inside(lay.video, x, y) then
       m.vtx.open(v, wgt.elrs.link.fields)
     elseif inside(lay.elrs, x, y) then
       m.elrs.refresh(wgt.elrs)
+    elseif lay.compact and inside(lay.mid, x, y) then
+      wgt.page = "aux"
     end
   elseif event == EVT_VIRTUAL_ENTER then
     m.elrs.refresh(wgt.elrs)
@@ -139,7 +146,9 @@ local function refresh(wgt, event, touchState)
   updateData(wgt)
   mainLayout(wgt)
   if event == nil then
-    m.vtx.close(v)  -- not fullscreen (any more): the picker can't be used
+    -- Not fullscreen (any more): no taps, so back to the main page.
+    m.vtx.close(v)
+    wgt.page = "main"
   elseif event ~= 0 then
     onEvent(wgt, event, touchState)
   end

@@ -547,10 +547,10 @@ def main():
 
         def tap_on(wgt, rect, frames=2):
             """A tap in the middle of a layout rectangle, in fullscreen. The
-            link (telemetry) stays as it is."""
+            outputs and the link (telemetry) stay as they are."""
             centre = (int(rect.x + rect.w // 2), int(rect.y + rect.h // 2))
-            return run(wgt, w, h, fonts, frames=frames, telemetry=radio.telemetry, event=tap,
-                       touch=centre, fullscreen=True)
+            return run(wgt, w, h, fonts, frames=frames, outputs=radio.outputs,
+                       telemetry=radio.telemetry, event=tap, touch=centre, fullscreen=True)
 
         def check_telemetry():
             fresh_radio(make_module())
@@ -575,6 +575,8 @@ def main():
             radio.names[4] = "ARMSW"
             widget.background(wgt)
             s = run(wgt, w, h, fonts)
+            if wgt.lay.compact:
+                s = tap_on(wgt, wgt.lay.mid)  # the names are on the aux page
             expect(s, "ARMSW", "output names re-read after background()")
             # A zone too small for the layout must not crash.
             wgt.zone.w, wgt.zone.h = 200, 100
@@ -749,6 +751,27 @@ def main():
             tap_on(wgt, wgt.lay.video)
             save(tap_on(wgt, wgt.lay.video), "picker-fc")
 
+        def check_pages():
+            fresh_radio(make_module(), make_fc())
+            wgt = new_widget(w, h)
+            run(wgt, w, h, fonts, frames=80, outputs=OUT_MOVING, telemetry=dict(TLM_GOOD),
+                fullscreen=True)
+            if not wgt.lay.compact:
+                tap_on(wgt, wgt.lay.mid)
+                if wgt.page != "main":
+                    problems.add(f"{w}x{h}: a full-size layout switched pages")
+                return
+            s = tap_on(wgt, wgt.lay.mid)
+            expect(s, "BEEPER", "compact layout: a tap on the middle shows the aux page")
+            expect(s, "TAP TO RETURN", "compact layout: the aux page says how to go back")
+            save(s, "aux")
+            s = tap_on(wgt, wgt.lay.mid)
+            expect(s, "READY", "compact layout: a tap on the aux page returns")
+            tap_on(wgt, wgt.lay.mid)
+            run(wgt, w, h, fonts, frames=2, telemetry=radio.telemetry)  # fullscreen left
+            if wgt.page != "main":
+                problems.add(f"{w}x{h}: the aux page stayed after leaving fullscreen")
+
         for scenario, light in (("idle", False), ("linked", False), ("warnings", False),
                                 ("linked", True)):
             guarded(f"{w}x{h} {scenario}", lambda: screenshot(scenario, light))
@@ -756,6 +779,7 @@ def main():
         guarded(f"{w}x{h} ELRS checks", check_elrs)
         guarded(f"{w}x{h} VTX checks", check_vtx)
         guarded(f"{w}x{h} FC checks", check_fc)
+        guarded(f"{w}x{h} page checks", check_pages)
         fresh_radio()
 
     for name in lua.globals().GLOBAL_WRITES.values():

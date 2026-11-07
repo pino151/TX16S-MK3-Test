@@ -48,7 +48,8 @@ end
 function M.auxList()
   local list = {}
   for i = 1, AUX_COUNT do
-    list[i] = { ch = FIRST_AUX + i - 1, name = "" }
+    local ch = FIRST_AUX + i - 1
+    list[i] = { ch = ch, name = "", num = tostring(ch + 1) }  -- num: for the mini bars
   end
   return list
 end

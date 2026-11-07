@@ -86,9 +86,13 @@ Touch and screen size:
   Lua can leave fullscreen (`lcd.exitFullScreen()`) but can't enter it. So everything must read
   correctly without fullscreen; touch is only for the VIDEO picker and the refresh tap. This
   also makes it pocket-safe.
-- **MK2 (480x272):** the full layout won't fit at sunlight-readable sizes. Use a compact
-  arrangement computed from `zone.w` / `zone.h` (for example aux bars on a second page) rather
-  than shrinking text.
+- **MK2 (480x272):** the full layout won't fit at sunlight-readable sizes, so zones under
+  400 px tall get a compact layout with two pages instead of smaller text:
+  - Main page: as on the MK3, but between the gimbals one small vertical bar per aux channel,
+    numbered 5–15 (fills up from the middle for +, down for -), and a taller QUAD strip.
+  - Aux page: the named aux bars over the whole screen, "TAP TO RETURN" at the top.
+  - In fullscreen a tap on the middle band shows the aux page and any tap there comes back.
+    Leaving fullscreen returns to the main page.
 - **Menu button corner:** in App mode EdgeTX draws its menu button over the top-left corner
   (45 px square on the MK2, 62 px on the MK3, hidden in fullscreen). When the zone starts at
   the screen's top-left, the layout keeps that corner clear.
@@ -255,14 +259,15 @@ Protocol (same in 3.x and 4.x):
 3. Test model: internal RF on (CRSF/ELRS), external RF off.
 4. Add a main view with the **App mode** layout; the widget goes in its single zone.
 5. Telem Ratio not Off (`Std` is fine), needed for the MSP read-back.
-6. Quad: in the Betaflight CLI, `vtxtable` bands should be in the order A, B, E, F, R (L optional),
-   or ELRS VTX Admin will set the wrong band.
+6. Quad: in the Betaflight CLI, check `vtxtable`. ELRS VTX Admin's own labels (in the ELRS Lua)
+   assume the bands are in the order A, B, E, F, R (L optional). Once linked, the widget's picker
+   uses the FC's own letters, so it sends the right row either way.
 7. Optional: keep the ELRS Lua in `SCRIPTS/TOOLS/` to cross-check what the widget reads. If the
    Betaflight TX Lua's VTX page can read the quad, the MSP read-back will work too.
 
 ## Build order
 1. Static layout, plus live sticks and aux bars with output names. *(Done: `WIDGETS/PreRace/`.
-   The MK2 compact layout is still to do.)*
+   The MK2 compact layout followed later; see "Touch and screen size".)*
 2. Quad telemetry status strip. *(Done: `telem.lua`.)*
 3. Reading ELRS settings over CRSF. *(Done: `crsf.lua`, `elrs.lua`.)*
 4. VTX channel picker and send. *(Done: `vtx.lua`, `picker.lua`.)*
