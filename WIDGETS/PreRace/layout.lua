@@ -157,21 +157,22 @@ function M.compute(w, h, auxCount, atOrigin)
   local stripH = floor(h * (L.compact and 0.24 or 0.19))
   local corner = atOrigin and (max(45, floor(h * 0.13)) + pad) or 0
 
-  -- Top band: VIDEO on the left, ELRS on the right.
-  local videoW = floor(innerW * 0.36)
-  L.video = panel(pad, pad, videoW, topH, pad, labelH, {
-    { "VIDEO", "R8", 58 },
-    { "PWR", "200", 42 },  -- the FC's power labels, e.g. "25", "200"
-  }, corner - pad)
+  -- Top band: ELRS on the left (its content clear of the menu button
+  -- corner), VIDEO on the right.
+  local videoW = floor(innerW * (L.compact and 0.30 or 0.27))
+  local elrsW = innerW - videoW - pad
   -- Power from 1000mW is shown as "1W"/"2W", so "500mW" is the widest.
-  local elrsX, elrsW = 2 * pad + videoW, innerW - videoW - pad
-  L.elrs = panel(elrsX, pad, elrsW, topH, pad, labelH, {
+  L.elrs = panel(pad, pad, elrsW, topH, pad, labelH, {
     { "RATE", "DK500", 1 },
     { "TX PWR", "500mW", 1 },
     { "TLM", "1:128", 1 },
-  }, pad, true)
-  L.elrsIdle = panel(elrsX, pad, elrsW, topH, pad, labelH, {
+  }, corner - pad, true)
+  L.elrsIdle = panel(pad, pad, elrsW, topH, pad, labelH, {
     { "ELRS", "NO MODULE", 1 },
+  }, corner - pad)
+  L.video = panel(2 * pad + elrsW, pad, videoW, topH, pad, labelH, {
+    { "VIDEO", "R8", 58 },
+    { "PWR", "200", 42 },  -- the FC's power labels, e.g. "25", "200"
   })
 
   -- Bottom strip: QUAD status, as three cells once linked, else "NO LINK".

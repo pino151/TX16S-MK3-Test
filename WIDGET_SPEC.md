@@ -31,7 +31,7 @@ other Lua while it's open, and needs a trip to SYS > Tools every time.
 Lay the screen out in zones. Suggested arrangement (Claude may propose a better one).
 Colours: sky blue for the aux bars, the stick dot and picker selections; green, amber and
 red for status (no yellow, which was too harsh).
-- **Top left: VIDEO.** HDZero band/channel in very large text (e.g. "R3"), as set in the ELRS
+- **Top right: VIDEO.** HDZero band/channel in very large text (e.g. "R3"), as set in the ELRS
   module's VTX Administrator, with its frequency in MHz beside the label and the power level
   (PWR; if VTX Admin leaves the power alone ("-"), the FC's). This is the only place the
   channel is shown. Once the FC has answered over MSP (see Q1):
@@ -53,7 +53,7 @@ red for status (no yellow, which was too harsh).
     a frequency, channels the table doesn't have greyed out and ignored, and the FC's power
     labels (e.g. "25", "200") instead of 1–8. The VIDEO panel uses the same letters,
     frequencies and power labels. Until then: Betaflight's default table.
-- **Top right: ELRS.** Packet rate, TX power and telemetry ratio. Display only, no editing.
+- **Top left: ELRS.** Packet rate, TX power and telemetry ratio. Display only, no editing.
   Each value has a detail beside its label: the rest of the rate name plus the RF band
   ("Full", "2.4G", "Full 900M"), dynamic power ("Dyn" or its AUX switch), and the telemetry
   ratio or bandwidth ("1:64", "5859bps"). TX power from 1000mW is shown as "1W"/"2W" so all
@@ -99,7 +99,8 @@ Touch and screen size:
     Leaving fullscreen returns to the main page.
 - **Menu button corner:** in App mode EdgeTX draws its menu button over the top-left corner
   (45 px square on the MK2, 62 px on the MK3, hidden in fullscreen). When the zone starts at
-  the screen's top-left, the layout keeps that corner clear.
+  the screen's top-left, the layout keeps that corner clear: the ELRS panel's content starts
+  to the right of it.
 
 Widget options (max 5):
 - `Light`: light background instead of black, for strong sun.
