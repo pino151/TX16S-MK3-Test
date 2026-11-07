@@ -156,21 +156,37 @@ function M.compute(w, h, auxCount)
   local _, labelH = lcd.sizeText("A", SMLSIZE)
   local innerW = w - 2 * pad
   local topH = floor(h * 0.28)
+
+  -- Status bar along the top (status.lua): date left, radio battery right.
+  local barH = labelH + pad
+  local iconH = max(6, floor(labelH * 0.55))
+  L.bar = {
+    w = w,
+    h = barH,
+    x = pad,
+    right = w - pad,
+    cy = floor(barH / 2),
+    iconH = iconH,
+    iconW = floor(iconH * 2.2),
+    nubW = max(2, floor(iconH / 4)),
+    gap = pad,
+  }
+  local top = barH  -- everything else starts below the bar
   local stripH = floor(h * (L.compact and 0.24 or 0.19))
 
   -- Top band: ELRS on the left, VIDEO on the right.
   local videoW = floor(innerW * 0.34)
   local elrsW = innerW - videoW - pad
   -- Power from 1000mW is shown as "1W"/"2W", so "500mW" is the widest.
-  L.elrs = panel(pad, pad, elrsW, topH, pad, labelH, {
+  L.elrs = panel(pad, top + pad, elrsW, topH, pad, labelH, {
     { "RATE", "DK500", 1 },
     { "TX PWR", "500mW", 1 },
     { "TLM", "1:128", 1 },
   }, pad, true)
-  L.elrsIdle = panel(pad, pad, elrsW, topH, pad, labelH, {
+  L.elrsIdle = panel(pad, top + pad, elrsW, topH, pad, labelH, {
     { "ELRS", "NO MODULE", 1 },
   })
-  L.video = panel(2 * pad + elrsW, pad, videoW, topH, pad, labelH, {
+  L.video = panel(2 * pad + elrsW, top + pad, videoW, topH, pad, labelH, {
     { "VIDEO", "R8", 58 },
     { "PWR", "200", 42 },  -- the FC's power labels, e.g. "25", "200"
   })
@@ -189,8 +205,8 @@ function M.compute(w, h, auxCount)
 
   -- Middle band: left gimbal, aux channels, right gimbal, laid out like the
   -- radio itself.
-  local midY = 2 * pad + topH
-  local midH = h - topH - stripH - 4 * pad
+  local midY = top + 2 * pad + topH
+  local midH = h - top - topH - stripH - 4 * pad
   L.mid = { x = 0, y = midY, w = w, h = midH }
   local s = min(midH - pad - labelH, floor(w * 0.21))
   local gy = midY + floor((midH - (s + pad + labelH)) / 2)
@@ -202,9 +218,9 @@ function M.compute(w, h, auxCount)
   if L.compact then
     -- Aux page: the named bars, full size. Main page: numbered mini bars,
     -- as thin as the aux page's.
-    local top = 2 * pad + labelH
-    L.auxHeader = { x = pad, right = w - pad, y = pad }
-    L.aux = auxGrid(pad, top, w - 2 * pad, h - top - pad, pad, auxCount)
+    local auxY = top + 2 * pad + labelH
+    L.auxHeader = { x = pad, right = w - pad, y = top + pad }
+    L.aux = auxGrid(pad, auxY, w - 2 * pad, h - auxY - pad, pad, auxCount)
     L.mini = miniBars(auxX, midY, w - 2 * auxX, midH, pad, labelH, auxCount, L.aux.barH)
   else
     L.aux = auxGrid(auxX, midY, w - 2 * auxX, midH, pad, auxCount)

@@ -31,6 +31,12 @@ other Lua while it's open, and needs a trip to SYS > Tools every time.
 Lay the screen out in zones. Suggested arrangement (Claude may propose a better one).
 Colours: sky blue for the aux bars, the stick dot and picker selections; green, amber and
 red for status (no yellow, which was too harsh).
+- **Status bar** (thin, along the top, on the MK3 and MK2 and on the MK2's aux page): the
+  date on the left (e.g. "Sat 7 Nov 2026"), the radio's battery on the right as an icon
+  filled over the Radio Setup battery range plus the voltage, red at or below the radio's
+  battery warning level. It stands in for EdgeTX's top bar, which App mode hides. No
+  speaker volume: EdgeTX gives Lua no way to read it (no getter in `getGeneralSettings()` or
+  anywhere else in `radio/src/lua/`).
 - **Top right: VIDEO.** HDZero band/channel in very large text (e.g. "R3"), as set in the ELRS
   module's VTX Administrator, with its frequency in MHz beside the label and the power level
   (PWR; if VTX Admin leaves the power alone ("-"), the FC's). This is the only place the
@@ -120,6 +126,9 @@ Widget options (max 5):
 - `Cells`: 0 = work out the quad's cell count from the voltage, 1–14 to force one.
 
 ## Data sources
+- Status bar: `getValue("tx-voltage")` (volts, 0.1 V steps) every 0.5 s; battery range and
+  warning level from `getGeneralSettings()` (`battMin`, `battMax`, `battWarn`) and the date
+  from `getDateTime()`, both every 10 s. The weekday is worked out from the date.
 - Channel outputs: `getOutputValue()`. Aux labels come from `model.getOutput(i).name`, so they
   match the radio's Outputs page. Fall back to "CH5" etc. if the name is blank.
 - Quad telemetry: CRSF sensors RQly, 1RSS/2RSS, ANT, RxBt (battery voltage), FM (flight mode).

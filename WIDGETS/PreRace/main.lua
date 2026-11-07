@@ -1,5 +1,6 @@
 -- Pre-race check dashboard. See WIDGET_SPEC.md in the repo.
--- Live sticks and aux bars with output names, the QUAD telemetry strip, ELRS
+-- A status bar with the date and the radio's battery,
+-- live sticks and aux bars with output names, the QUAD telemetry strip, ELRS
 -- settings read from the TX module (and a menu to change them), a VTX
 -- channel picker that sends through ELRS VTX Administrator, and the FC's VTX
 -- setting read back over MSP.
@@ -11,7 +12,7 @@ local DIR = "/WIDGETS/PreRace/"
 -- unless it is actually placed on a screen.
 local mods
 local MODULES = { "chans", "layout", "draw", "telem", "crsf", "elrs", "msp", "vtx", "picker",
-  "elrsmenu" }
+  "elrsmenu", "status" }
 
 local function loadModules()
   if not mods then
@@ -46,6 +47,7 @@ local function create(zone, opts)
     elrs = m.elrs.new(m.crsf),
     msp = m.msp.new(),
     vtx = m.vtx.new(),
+    status = m.status.new(),
   }
   -- The ELRS reader pops every CRSF frame, so it hands MSP replies on.
   wgt.elrs.link.handlers[m.msp.MSP_RESP] = function(data)
@@ -180,7 +182,12 @@ local function refresh(wgt, event, touchState)
   elseif e.ui ~= "main" then
     m.elrsmenu.draw(menuLayout(wgt), e, wgt.colors, m.picker.button)
   else
+    local lay = wgt.lay
     m.draw.screen(wgt)
+    if lay.bar then
+      m.status.update(wgt.status)
+      m.status.draw(lay.bar, wgt.status, wgt.colors)
+    end
   end
 end
 

@@ -209,6 +209,7 @@ class Screen:
         self.fonts = fonts
         self.problems = problems
         self.texts = []
+        self.text_colors = {}      # text -> (r, g, b) it was last drawn in
         self.text_boxes = []
 
     def check(self, what, x0, y0, x1, y1):
@@ -234,6 +235,7 @@ class Screen:
         self.d.text((x, y + line_h - base), text, font=font, fill=flag_rgb(flags),
                     anchor="ls")
         self.texts.append(text)
+        self.text_colors[text] = flag_rgb(flags)
         self.text_boxes.append((text, *box))
 
     def sizeText(self, text, flags=0):
@@ -302,6 +304,7 @@ class Radio:
         self.module = None         # fake_elrs.FakeElrs, or None: no CRSF module
         self.fc = None             # fake_elrs.FakeFc: the quad's FC, reached while linked
         self.crsf_in = []          # (ready at tick, command, data) on the way in
+        self.tx_voltage = 7.9      # the radio's battery, volts
         g = lua.globals()
         for name, value in CONSTANTS.items():
             g[name] = value
@@ -321,6 +324,12 @@ class Radio:
         g.getRSSI = self.get_rssi
         g.getFieldInfo = self.get_field_info
         g.getSourceValue = self.get_source_value
+        g.getValue = self.get_value
+        # A TX16S's battery range (2S) and the date the previews show.
+        g.getGeneralSettings = lambda: lua.table_from(
+            {"battWarn": 6.6, "battMin": 6.6, "battMax": 8.4, "imperial": 0})
+        g.getDateTime = lambda: lua.table_from(
+            {"year": 2026, "mon": 11, "day": 7, "hour": 9, "min": 41, "sec": 0})
         g.crossfireTelemetryPush = self.crsf_push
         g.crossfireTelemetryPop = self.crsf_pop
 
@@ -394,6 +403,13 @@ class Radio:
         if self.telemetry and name in self.telemetry:
             return self.telemetry[name], True, True
         return self.last.get(name, 0), False, False
+
+    def get_value(self, src):
+        """Only the source the widget uses; anything else is a mistake."""
+        if src == "tx-voltage":
+            return self.tx_voltage
+        self.problems.add(f"getValue({src!r}): not mocked, check the widget")
+        return 0
 
     def rgb(self, r, g=None, b=None):
         if g is None:
@@ -746,6 +762,28 @@ def main():
             if wgt.page != "main":
                 problems.add(f"{w}x{h}: the aux page stayed after leaving fullscreen")
 
+        def check_status():
+            # The bar: the date and the radio's battery, red at the radio's
+            # warning voltage; also on the compact aux page.
+            fresh_radio(make_module())
+            radio.tx_voltage = 7.9
+            wgt = new_widget(w, h)
+            s = run(wgt, w, h, fonts, frames=4)
+            expect(s, "Sat 7 Nov 2026", "the date in the status bar")
+            expect(s, "7.9V", "the radio battery in the status bar")
+            fg, red = flag_rgb(int(wgt.colors.fg)), flag_rgb(int(wgt.colors.levels[3]))
+            if s.text_colors.get("7.9V") != fg:
+                problems.add(f"{w}x{h}: a full radio battery isn't white")
+            radio.tx_voltage = 6.5
+            s = run(wgt, w, h, fonts, frames=12)
+            if s.text_colors.get("6.5V") != red:
+                problems.add(f"{w}x{h}: a radio battery below the warning level isn't red")
+            radio.tx_voltage = 7.9
+            if wgt.lay.compact:
+                run(wgt, w, h, fonts, frames=2, fullscreen=True)
+                s = tap_on(wgt, wgt.lay.mid)
+                expect(s, "Sat 7 Nov 2026", "the status bar on the aux page")
+
         def check_elrs_menu():
             module = make_module()
             names = [f["name"] for f in module.fields]
@@ -826,6 +864,7 @@ def main():
         guarded(f"{w}x{h} FC checks", check_fc)
         guarded(f"{w}x{h} page checks", check_pages)
         guarded(f"{w}x{h} ELRS menu checks", check_elrs_menu)
+        guarded(f"{w}x{h} status bar checks", check_status)
         fresh_radio()
 
     for name in lua.globals().GLOBAL_WRITES.values():
