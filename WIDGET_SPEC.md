@@ -33,10 +33,14 @@ Lay the screen out in zones. Suggested arrangement (Claude may propose a better 
   (bands: R, F, E, etc.; channels 1–8), then send the choice via ELRS VTX Admin. When linked,
   grey out channels the FC's vtxtable marks as unsupported (frequency 0, see Q1).
 - **Top right: ELRS.** Packet rate, TX power and telemetry ratio. Display only, no editing.
-- **Center: STICKS.** Two gimbal circles with live crosshairs showing the actual
-  channel outputs.
-- **Center: AUX.** Just below sticks display. 11 channels, two columns of 5, and one last one centered below: the channel's name as set on the radio's
-  Outputs page, and a live bar/position indicator.
+  TX power above 500mW is shown as "1W"/"2W" so all three values fit one font size.
+- **Middle: STICKS and AUX**, laid out like the radio: left gimbal, aux grid, right gimbal.
+  - **STICKS:** two gimbal circles with live crosshairs showing the actual channel outputs,
+    with the axis values (Y/T/R/P in %) underneath. The stick mode decides which gimbal
+    shows which axes; channels come from the radio's default channel order.
+  - **AUX:** 11 channels (CH5–CH15), two columns of 5, and one last one centered below:
+    the channel's name as set on the radio's Outputs page, and a live bar/position
+    indicator that fills from the centre.
 - **Status strip: QUAD.** Shows "NO LINK" until telemetry arrives, then:
   - Link: LQ (RQly) with green/yellow/red and RSSI
   - Pack: per-cell voltage, with cell count auto-detected and the total voltage
@@ -52,6 +56,13 @@ Touch and screen size:
 - **MK2 (480x272):** the full layout won't fit at sunlight-readable sizes. Use a compact
   arrangement computed from `zone.w` / `zone.h` (for example aux bars on a second page) rather
   than shrinking text.
+- **Menu button corner:** in App mode EdgeTX draws its menu button over the top-left corner
+  (45 px square on the MK2, 62 px on the MK3, hidden in fullscreen). When the zone starts at
+  the screen's top-left, the layout keeps that corner clear.
+
+Widget options (max 5):
+- `Light`: light background instead of black, for strong sun.
+- `StickMode`: 0 = use the radio's stick mode (needs EdgeTX 2.12+, otherwise mode 2), 1–4 to force one.
 
 ## Data sources
 - Channel outputs: `getOutputValue()`. Aux labels come from `model.getOutput(i).name`, so they
@@ -208,7 +219,8 @@ Protocol (same in 3.x and 4.x):
    Betaflight TX Lua's VTX page can read the quad, the MSP read-back will work too.
 
 ## Build order
-1. Static layout, plus live sticks and aux bars with output names.
+1. Static layout, plus live sticks and aux bars with output names. *(Done: `WIDGETS/PreRace/`.
+   The MK2 compact layout is still to do.)*
 2. Quad telemetry status strip.
 3. Reading ELRS settings over CRSF.
 4. VTX channel picker and send.

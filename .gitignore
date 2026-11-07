@@ -1,0 +1,8 @@
+# Compiled Lua that EdgeTX writes next to scripts on the SD card
+*.luac
+
+# utils/preview.py output and its downloaded fonts
+/preview/
+/utils/.fonts/
+
+__pycache__/

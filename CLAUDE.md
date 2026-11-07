@@ -34,6 +34,9 @@
 The repo mirrors the SD card layout, so these folders can be copied straight to the card.
 
 ## Testing
+0. For color-screen widgets, run `python3 utils/preview.py` first (needs `pip install lupa pillow`). It runs the
+   widget's Lua against a mock of the EdgeTX API, writes PNGs at 800x480 and 480x272 to `preview/`, and reports
+   problems such as drawing outside the zone or creating globals. It's a layout check, not a simulator.
 1. Run it in the EdgeTX Companion simulator, using a TX16S MK3 profile on the same firmware version as the radio.
    Anything that talks to the ELRS module over CRSF can't be tested there (no module answers), so test that on the radio.
 2. Then copy it to the radio. Connect USB, choose "USB Storage (SD)", and copy the `SCRIPTS/` and `WIDGETS/` folders.
