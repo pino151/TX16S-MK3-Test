@@ -42,9 +42,11 @@ def info(name, text, hidden=False):
 
 
 class FakeElrs:
-    def __init__(self, name, fields, serial=b"ELRS", silent=False, read_only=False):
+    def __init__(self, name, fields, serial=b"ELRS", silent=False, read_only=False, refuse=()):
         self.name, self.fields, self.serial, self.silent = name, fields, serial, silent
         self.read_only = read_only  # ignore writes, to test a failed send
+        self.refuse = set(refuse)   # parameter names whose writes it ignores (ELRS can
+                                    # refuse e.g. a rate change while connected)
         self.reads = []    # (field id, chunk) of every parameter read
         self.writes = []   # (field name, value) of every parameter write
         self.drop = set()  # (field id, chunk) replies to lose, once each
@@ -119,7 +121,7 @@ class FakeElrs:
             return []
         f = self.fields[fid - 1]
         self.writes.append((f["name"], value))
-        if self.read_only:
+        if self.read_only or f["name"] in self.refuse:
             return []
         if f["type"] == COMMAND:
             if f["name"] == "Send VTx" and value == 1:

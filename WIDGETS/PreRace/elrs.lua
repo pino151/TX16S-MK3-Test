@@ -1,13 +1,14 @@
 -- ELRS panel: packet rate, TX power and telemetry ratio, read from the TX
--- module with crsf.lua and turned into short display strings. Works without
--- a quad connected.
+-- module with crsf.lua and turned into short display strings, plus the ELRS
+-- settings menu's state (elrsmenu.lua draws it): change the settings, write
+-- them to the module and read them back. Works without a quad connected.
 
 local M = {}
 
 local gsub, match = string.gsub, string.match
 
 -- Status levels, as in telem.lua.
-local NONE, WARN = 0, 2
+local NONE, OK, WARN, BAD = 0, 1, 2, 3
 
 -- Parameter names (ELRS 3.x and 4.x). "RF Band" only exists on ELRS 4.x
 -- with an LR1121 (the MK3's internal module). The VTX Administrator ones are
@@ -19,6 +20,24 @@ local ALIASES = { ["Band/Enable"] = "Band" }
 -- if it exists it has been seen by then.
 local REQUIRED = { "Packet Rate", "Telem Ratio", "Max Power", "Dynamic",
   "Band", "Channel", "Pwr Lvl", "Send VTx" }
+
+-- What the menu can change, in menu (and write) order. All are text
+-- selections: the value written is the option's index. Packet rate, power
+-- and telemetry ratio are stored per model in the ELRS module.
+local SETTINGS = {
+  { name = "RF Band", label = "RF BAND" },
+  { name = "Packet Rate", label = "RATE" },
+  { name = "Max Power", label = "POWER" },
+  { name = "Dynamic", label = "DYNAMIC" },
+  { name = "Telem Ratio", label = "TELEM" },
+}
+-- The panel cell that shows each setting's result after APPLY.
+local CELL = { ["RF Band"] = "rate", ["Packet Rate"] = "rate", ["Max Power"] = "power",
+  ["Dynamic"] = "power", ["Telem Ratio"] = "tlm" }
+
+local SETTLE = 30        -- ticks after the writes before reading them back
+local TIMEOUT = 500      -- ticks an APPLY may take before it counts as failed
+local SHOW_RESULT = 500  -- ticks the green/red result stays on
 
 local function cell()
   return { main = "--", sub = "", level = NONE }
@@ -33,6 +52,9 @@ function M.new(crsf)
     rate = cell(),
     power = cell(),
     tlm = cell(),
+    ui = "main",     -- main or menu
+    state = "idle",  -- idle, writing, settling, verifying or done
+    rows = {},
   }
   e.list = { e.rate, e.power, e.tlm }  -- panel order
   return e
@@ -105,10 +127,153 @@ local MESSAGES = {
   reading = { "READING", NONE },
 }
 
+-- Menu --------------------------------------------------------------------
+
+-- An option as the menu shows it: "100Hz Full(-112dBm)" -> "100Hz Full  -112dBm".
+local function optionText(row, i)
+  local t = gsub(gsub(row.field.options[i + 1] or "?", "%(", "  "), "%)", "")
+  if row.name == "Max Power" then
+    t = t .. (row.field.unit or "")
+  end
+  return t
+end
+
+-- Each row's text, whether it differs from the module's value, and whether
+-- it can be changed: a new RF band makes ELRS pick the packet rate itself.
+local function describeRows(e)
+  local bandChanged = false
+  for i = 1, #e.rows do
+    local row = e.rows[i]
+    row.changed = row.sel ~= row.field.value
+    row.disabled = row.name == "Packet Rate" and bandChanged
+    if row.disabled then
+      row.sel = row.field.value
+      row.changed, row.text = false, "set by RF band"
+    else
+      row.text = optionText(row, row.sel)
+    end
+    bandChanged = bandChanged or (row.name == "RF Band" and row.changed)
+  end
+end
+
+-- Open the menu on the module's current values. False if there are none.
+function M.open(e)
+  local f, rows = e.link.fields, {}
+  for i = 1, #SETTINGS do
+    local s = SETTINGS[i]
+    local field = f[s.name]
+    if field and field.options and field.value then
+      rows[#rows + 1] = { name = s.name, label = s.label, field = field, sel = field.value }
+    end
+  end
+  if #rows == 0 then
+    return false
+  end
+  e.rows = rows
+  describeRows(e)
+  e.ui = "menu"
+  return true
+end
+
+function M.close(e)
+  e.ui = "main"
+end
+
+-- The next (dir 1) or previous (dir -1) option, skipping the empty entries
+-- ELRS uses for values the hardware doesn't support, wrapping round.
+local function step(row, dir)
+  local options = row.field.options
+  local n, i = #options, row.sel
+  for _ = 1, n do
+    i = (i + dir) % n
+    if options[i + 1] ~= "" then
+      row.sel = i
+      return
+    end
+  end
+end
+
+-- Mark each changed setting's panel cell green if the module now holds the
+-- new value, red if not. `checked` = false: none got through.
+local function finish(e, now, checked)
+  local result, fields = {}, e.link.fields
+  for i = 1, #e.changes do
+    local row = e.changes[i]
+    local f = fields[row.name]
+    local ok = checked and f and f.value == row.sel
+    local name = CELL[row.name]
+    if result[name] ~= BAD then
+      result[name] = ok and OK or BAD
+    end
+  end
+  e.result, e.state, e.resultUntil = result, "done", now + SHOW_RESULT
+end
+
+-- Write the changed settings, in menu order.
+local function apply(e)
+  local link, crsf, now = e.link, e.crsf, getTime()
+  local changes, names, ok = {}, {}, true
+  for i = 1, #e.rows do
+    local row = e.rows[i]
+    if row.changed then
+      changes[#changes + 1] = row
+      names[#names + 1] = row.name
+      ok = crsf.write(link, row.name, row.sel) and ok
+      if row.name == "RF Band" then
+        names[#names + 1] = "Packet Rate"  -- ELRS picks a new one
+      end
+    end
+  end
+  e.ui = "main"
+  if #changes == 0 then
+    return
+  end
+  e.changes, e.readNames, e.deadline = changes, names, now + TIMEOUT
+  if ok then
+    e.state = "writing"
+  else
+    crsf.clearWrites(link)
+    finish(e, now, false)
+  end
+end
+
+-- A tap in the menu: "prev"/"next" with the row's index, "cancel" or "ok".
+function M.choose(e, kind, i)
+  local row = e.rows[i]
+  if (kind == "prev" or kind == "next") and row and not row.disabled then
+    step(row, kind == "next" and 1 or -1)
+    describeRows(e)
+  elseif kind == "cancel" then
+    e.ui = "main"
+  elseif kind == "ok" then
+    apply(e)
+  end
+end
+
+-- After APPLY: writes go out, the module settles, then they're read back.
+local function stepApply(e, now)
+  local st, link, crsf = e.state, e.link, e.crsf
+  if (st == "writing" or st == "settling" or st == "verifying") and now >= e.deadline then
+    crsf.clearWrites(link)
+    finish(e, now, false)
+  elseif st == "writing" and not crsf.writing(link) then
+    e.state, e.readAt = "settling", now + SETTLE
+  elseif st == "settling" and now >= e.readAt then
+    if crsf.read(link, e.readNames) then
+      e.state = "verifying"
+    end
+  elseif st == "verifying" and not crsf.busy(link) then
+    finish(e, now, true)
+  elseif st == "done" and now >= e.resultUntil then
+    e.state, e.result = "idle", nil
+  end
+end
+
 -- Call from refresh() and background(). allowReread = false while armed.
 function M.update(e, allowReread)
   local link = e.link
   e.crsf.update(link, allowReread)
+  stepApply(e, getTime())
 
   local f = link.fields
   if not (f["Packet Rate"] or f["Telem Ratio"] or f["Max Power"]) then
@@ -121,15 +286,21 @@ function M.update(e, allowReread)
     return
   end
   e.message = nil
-  if link.version ~= e.version then
-    e.version = link.version
+  if link.version ~= e.version or e.state ~= e.shown then
+    e.version, e.shown = link.version, e.state
     formatRate(e.rate, f["Packet Rate"], f["RF Band"])
     formatPower(e.power, f["Max Power"], f["Dynamic"])
     formatTlm(e.tlm, f["Telem Ratio"])
+    local result = e.state == "done" and e.result
+    if result then
+      for name, level in pairs(result) do
+        e[name].level = level
+      end
+    end
   end
 end
 
--- Read everything again (the refresh tap).
+-- Read everything again (ENTER, or a tap with nothing to show).
 function M.refresh(e)
   e.crsf.restart(e.link)
 end

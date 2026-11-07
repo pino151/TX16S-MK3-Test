@@ -101,6 +101,7 @@ local function button(r, text, font, selected, c, disabled)
   end
   drawText(r.x + floor(r.w / 2), r.y + floor(r.h / 2), text, font + CENTER + VCENTER + color)
 end
+M.button = button  -- elrsmenu.lua uses it too
 
 -- `v` is the vtx.lua state, `vtx` the module (for the channel labels).
 function M.draw(P, v, vtx, c)

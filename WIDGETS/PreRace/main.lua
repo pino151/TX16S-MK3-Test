@@ -1,7 +1,8 @@
 -- Pre-race check dashboard. See WIDGET_SPEC.md in the repo.
 -- Live sticks and aux bars with output names, the QUAD telemetry strip, ELRS
--- settings read from the TX module, a VTX channel picker that sends through
--- ELRS VTX Administrator, and the FC's VTX setting read back over MSP.
+-- settings read from the TX module (and a menu to change them), a VTX
+-- channel picker that sends through ELRS VTX Administrator, and the FC's VTX
+-- setting read back over MSP.
 
 local DIR = "/WIDGETS/PreRace/"
 
@@ -9,7 +10,8 @@ local DIR = "/WIDGETS/PreRace/"
 -- They are loaded on the first create() so the widget costs almost nothing
 -- unless it is actually placed on a screen.
 local mods
-local MODULES = { "chans", "layout", "draw", "telem", "crsf", "elrs", "msp", "vtx", "picker" }
+local MODULES = { "chans", "layout", "draw", "telem", "crsf", "elrs", "msp", "vtx", "picker",
+  "elrsmenu" }
 
 local function loadModules()
   if not mods then
@@ -102,36 +104,57 @@ local function pickerLayout(wgt)
   return p
 end
 
+-- The ELRS menu's layout, made again when the zone or its rows change.
+local function menuLayout(wgt)
+  local m, zone, p, e = mods, wgt.zone, wgt.menu, wgt.elrs
+  if not p or p.w ~= zone.w or p.h ~= zone.h or p.n ~= #e.rows then
+    p = m.elrsmenu.layout(zone.w, zone.h, m.layout.fit, e.rows)
+    wgt.menu = p
+  end
+  return p
+end
+
 local function inside(r, x, y)
   return r and x >= r.x and x < r.x + r.w and y >= r.y and y < r.y + r.h
 end
 
 -- Events only arrive in fullscreen (long-press the widget to get there).
--- Main screen: a tap on the VIDEO panel opens the VTX picker; a tap on the
--- ELRS panel, or ENTER, reads the ELRS settings again. In the compact
--- layout a tap on the middle band shows the aux page, and any tap there
--- comes back.
--- Picker: taps choose and send; EXIT closes it.
+-- Main screen: a tap on the VIDEO panel opens the VTX picker, a tap on the
+-- ELRS panel the ELRS menu (or, with no settings to show, reads them
+-- again), and ENTER reads the ELRS settings again. In the compact layout a
+-- tap on the middle band shows the aux page, and any tap there comes back.
+-- Picker and menu: taps choose and send; EXIT closes them.
 local function onEvent(wgt, event, touchState)
-  local m, v = mods, wgt.vtx
+  local m, v, e = mods, wgt.vtx, wgt.elrs
   local tap = touchState and event == EVT_TOUCH_TAP
   if v.ui ~= "main" then
     if tap then
       local kind, i = m.picker.hit(pickerLayout(wgt), v.ui, touchState.x, touchState.y)
       if kind then
-        m.vtx.choose(v, kind, i, m.crsf, wgt.elrs.link)
+        m.vtx.choose(v, kind, i, m.crsf, e.link)
       end
     elseif event == EVT_VIRTUAL_EXIT then
       m.vtx.close(v)
+    end
+  elseif e.ui ~= "main" then
+    if tap then
+      local kind, i = m.elrsmenu.hit(menuLayout(wgt), touchState.x, touchState.y)
+      if kind then
+        m.elrs.choose(e, kind, i)
+      end
+    elseif event == EVT_VIRTUAL_EXIT then
+      m.elrs.close(e)
     end
   elseif tap then
     local lay, x, y = wgt.lay, touchState.x, touchState.y
     if lay.compact and wgt.page == "aux" then
       wgt.page = "main"
     elseif inside(lay.video, x, y) then
-      m.vtx.open(v, wgt.elrs.link.fields)
+      m.vtx.open(v, e.link.fields)
     elseif inside(lay.elrs, x, y) then
-      m.elrs.refresh(wgt.elrs)
+      if not m.elrs.open(e) then
+        m.elrs.refresh(e)
+      end
     elseif lay.compact and inside(lay.mid, x, y) then
       wgt.page = "aux"
     end
@@ -141,20 +164,23 @@ local function onEvent(wgt, event, touchState)
 end
 
 local function refresh(wgt, event, touchState)
-  local m, v = mods, wgt.vtx
+  local m, v, e = mods, wgt.vtx, wgt.elrs
   updateData(wgt)
   mainLayout(wgt)
   if event == nil then
     -- Not fullscreen (any more): no taps, so back to the main page.
     m.vtx.close(v)
+    m.elrs.close(e)
     wgt.page = "main"
   elseif event ~= 0 then
     onEvent(wgt, event, touchState)
   end
-  if v.ui == "main" then
-    m.draw.screen(wgt)
-  else
+  if v.ui ~= "main" then
     m.picker.draw(pickerLayout(wgt), v, m.vtx, wgt.colors)
+  elseif e.ui ~= "main" then
+    m.elrsmenu.draw(menuLayout(wgt), e, wgt.colors, m.picker.button)
+  else
+    m.draw.screen(wgt)
   end
 end
 

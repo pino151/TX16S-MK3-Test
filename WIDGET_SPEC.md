@@ -53,14 +53,27 @@ red for status (no yellow, which was too harsh).
     a frequency, channels the table doesn't have greyed out and ignored, and the FC's power
     labels (e.g. "25", "200") instead of 1–8. The VIDEO panel uses the same letters,
     frequencies and power labels. Until then: Betaflight's default table.
-- **Top left: ELRS.** Packet rate, TX power and telemetry ratio. Display only, no editing.
+- **Top left: ELRS.** Packet rate, TX power and telemetry ratio.
   Each value has a detail beside its label: the rest of the rate name plus the RF band
   ("Full", "2.4G", "Full 900M"), dynamic power ("Dyn" or its AUX switch), and the telemetry
   ratio or bandwidth ("1:64", "5859bps"). TX power from 1000mW is shown as "1W"/"2W" so all
   three values fit one font size. Telemetry Off shows yellow (the QUAD strip needs it).
   Until values arrive the panel says READING, or why there are none: NO MODULE (no CRSF
   module set up in the model), NO REPLY, or NOT ELRS. Values stay white while being re-read.
-- **Middle: STICKS and AUX**, laid out like the radio: left gimbal, aux grid, right gimbal.
+  Tap it (in fullscreen) to open the ELRS settings menu (with nothing to show, a tap reads
+  the settings again):
+  - One row per setting: RF BAND (ELRS 4.x with an LR1121, i.e. the MK3), RATE, POWER (max
+    power), DYNAMIC and TELEM, each with < and > to step through the module's own options
+    (skipping the empty ones it uses for values the hardware doesn't support). A changed
+    value shows in blue. Then CANCEL or APPLY; EXIT or leaving fullscreen cancels.
+  - A new RF band makes ELRS pick the packet rate itself, so the RATE row then shows "set by
+    RF band" and isn't written.
+  - APPLY writes only the changed settings (in row order), waits 0.3 s and reads them back.
+    Each affected panel value then shows green if the module took it or red if not (ELRS can
+    refuse, e.g. a rate change while a quad is connected), for 5 s. These settings are
+    stored per model in the ELRS module.
+- **Middle: STICKS and AUX**, laid out like the radio: left gimbal, aux grid, right gimbal,
+  with an empty column (3% of the width) between each gimbal and the aux area.
   - **STICKS:** two gimbal circles, each with a dot showing the actual channel outputs,
     with the axis values (Y/T/R/P in %) underneath. The stick mode decides which gimbal
     shows which axes; channels come from the radio's default channel order.
@@ -134,7 +147,7 @@ Widget options (max 5):
   module, then reads fields by ID, drops each field it doesn't need as soon as its name is in,
   and stops once it has the ones it needs; lost replies are retried twice. The known fields are
   re-read when the widget resumes after a tool, every 30 s while not armed, and in full scan
-  on a tap on the ELRS panel or ENTER (both need fullscreen).
+  on ENTER (in fullscreen).
 - Don't break if no ELRS module is detected. Show a clear message instead.
 - The VTX picker needs a confirmation step before sending. The module itself asks for no
   confirmation, so ours is the only one. The confirm text should say that the choice is sent

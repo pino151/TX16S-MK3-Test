@@ -586,12 +586,10 @@ def main():
             radio.clock += 300
             s = run(wgt, w, h, fonts, frames=40)
             expect(s, "500mW", "ELRS settings re-read after a tool ran")
-            # A tap on the ELRS panel (in fullscreen) reads everything again.
+            # ENTER (in fullscreen) reads everything again.
             module.set("Telem Ratio", 1)
-            r = wgt.lay.elrs
-            centre = (int(r.x + r.w // 2), int(r.y + r.h // 2))
-            s = run(wgt, w, h, fonts, frames=80, event=tap, touch=centre)
-            expect(s, "Off", "ELRS settings re-read after a tap on the panel")
+            s = run(wgt, w, h, fonts, frames=80, event=CONSTANTS["EVT_VIRTUAL_ENTER"])
+            expect(s, "Off", "ELRS settings re-read after ENTER")
             # A lost reply is asked for again.
             module = make_module()
             module.drop = {(module.id_of("Telem Ratio"), 0)}
@@ -754,6 +752,77 @@ def main():
             if wgt.page != "main":
                 problems.add(f"{w}x{h}: the aux page stayed after leaving fullscreen")
 
+        def check_elrs_menu():
+            module = make_module()
+            names = [f["name"] for f in module.fields]
+            fresh_radio(module, make_fc())
+            wgt = new_widget(w, h)
+            run(wgt, w, h, fonts, frames=80, fullscreen=True)
+            e = wgt.elrs
+            # A tap on the ELRS panel opens the menu: RF band only on ELRS 4.x LR1121.
+            s = tap_on(wgt, wgt.lay.elrs)
+            expect(s, "APPLY", "the ELRS menu opens on a tap on the ELRS panel")
+            rows = [e.rows[i].label for i in range(1, len(e.rows) + 1)]
+            want_rows = (["RF BAND"] if "RF Band" in names else []) + ["RATE", "POWER", "DYNAMIC", "TELEM"]
+            if rows != want_rows:
+                problems.add(f"{w}x{h}: ELRS menu rows {rows}, expected {want_rows}")
+            row = {e.rows[i].label: i for i in range(1, len(e.rows) + 1)}
+            # CANCEL writes nothing.
+            tap_on(wgt, wgt.menu.cancel)
+            if module.writes or e.ui != "main":
+                problems.add(f"{w}x{h}: CANCEL in the ELRS menu didn't just close it")
+            # Step power up and telemetry on one (to Off), then APPLY: only those
+            # two are written, then read back and shown green.
+            tap_on(wgt, wgt.lay.elrs)
+            tap_on(wgt, wgt.menu.rows[row["POWER"]].next)
+            tap_on(wgt, wgt.menu.rows[row["TELEM"]].next)
+            s = tap_on(wgt, wgt.menu.rows[row["RATE"]].next)
+            tap_on(wgt, wgt.menu.rows[row["RATE"]].prev)  # back to where it was
+            save(s, "elrs-menu")
+            power, tlm = module.value("Max Power") + 1, module.value("Telem Ratio") + 1
+            s = tap_on(wgt, wgt.menu.ok, frames=60)
+            if module.writes != [("Max Power", power), ("Telem Ratio", tlm)]:
+                problems.add(f"{w}x{h}: ELRS menu wrote {module.writes}")
+            tlm_options = module.fields[module.id_of("Telem Ratio") - 1]["options"].split(";")
+            expect(s, tlm_options[tlm], "the new telemetry ratio on the ELRS panel")
+            if (e.power.level, e.tlm.level) != (1, 1):
+                problems.add(f"{w}x{h}: ELRS values the module took aren't green "
+                             f"({e.power.level}, {e.tlm.level})")
+            # Stepping skips the empty options ELRS uses for unsupported values.
+            tap_on(wgt, wgt.lay.elrs)
+            rate = e.rows[row["RATE"]]
+            options = module.fields[module.id_of("Packet Rate") - 1]["options"].split(";")
+            for _ in range(len(options)):
+                tap_on(wgt, wgt.menu.rows[row["RATE"]].next)
+                if options[rate.sel] == "":
+                    problems.add(f"{w}x{h}: the ELRS menu stepped onto an empty rate option")
+                    break
+            tap_on(wgt, wgt.menu.cancel)
+            # A rate change the module refuses shows red.
+            module = make_module(refuse={"Packet Rate"})
+            fresh_radio(module, make_fc())
+            wgt = new_widget(w, h)
+            run(wgt, w, h, fonts, frames=80, fullscreen=True)
+            tap_on(wgt, wgt.lay.elrs)
+            tap_on(wgt, wgt.menu.rows[row["RATE"]].next)
+            tap_on(wgt, wgt.menu.ok, frames=60)
+            if wgt.elrs.rate.level != 3:
+                problems.add(f"{w}x{h}: a refused rate change isn't shown red")
+            # On ELRS 4.x a new RF band makes ELRS pick the rate, so the rate row
+            # is set aside and only the band is written.
+            if "RF Band" in names:
+                module = make_module()
+                fresh_radio(module, make_fc())
+                wgt = new_widget(w, h)
+                run(wgt, w, h, fonts, frames=80, fullscreen=True)
+                tap_on(wgt, wgt.lay.elrs)
+                tap_on(wgt, wgt.menu.rows[row["RATE"]].next)
+                s = tap_on(wgt, wgt.menu.rows[row["RF BAND"]].next)
+                expect(s, "set by RF band", "the rate row with a new RF band")
+                tap_on(wgt, wgt.menu.ok, frames=60)
+                if [n for n, _ in module.writes] != ["RF Band"]:
+                    problems.add(f"{w}x{h}: with a new RF band the menu wrote {module.writes}")
+
         for scenario, light in (("idle", False), ("linked", False), ("warnings", False),
                                 ("linked", True)):
             guarded(f"{w}x{h} {scenario}", lambda: screenshot(scenario, light))
@@ -762,6 +831,7 @@ def main():
         guarded(f"{w}x{h} VTX checks", check_vtx)
         guarded(f"{w}x{h} FC checks", check_fc)
         guarded(f"{w}x{h} page checks", check_pages)
+        guarded(f"{w}x{h} ELRS menu checks", check_elrs_menu)
         fresh_radio()
 
     for name in lua.globals().GLOBAL_WRITES.values():

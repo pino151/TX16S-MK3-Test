@@ -101,7 +101,7 @@ local function auxGrid(x, y, w, h, pad, count)
   local g = {
     rowH = rowH,
     colW = colW,
-    nameW = floor(colW * 0.45),
+    nameW = floor(colW * 0.46),
     gap = pad,
     barH = max(3, floor(h / 48 + 0.5)),  -- thin: about 5 px on both radios
     nameFont = SMLSIZE,
@@ -192,11 +192,13 @@ function M.compute(w, h, auxCount)
   local midY = 2 * pad + topH
   local midH = h - topH - stripH - 4 * pad
   L.mid = { x = 0, y = midY, w = w, h = midH }
-  local s = min(midH - pad - labelH, floor(w * 0.23))
+  local s = min(midH - pad - labelH, floor(w * 0.21))
   local gy = midY + floor((midH - (s + pad + labelH)) / 2)
   L.left = gimbal(pad, gy, s, pad, labelH)
   L.right = gimbal(w - pad - s, gy, s, pad, labelH)
-  local auxX = 2 * pad + s
+  -- An empty column either side of the aux area, so names and bars don't
+  -- sit against the stick displays.
+  local auxX = 2 * pad + s + floor(w * 0.03)
   if L.compact then
     -- Aux page: the named bars, full size. Main page: numbered mini bars,
     -- as thin as the aux page's.
