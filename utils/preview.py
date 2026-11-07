@@ -29,7 +29,6 @@ Exits with status 1 if any problem was found.
 
 import argparse
 import sys
-import time
 import urllib.request
 from pathlib import Path
 
@@ -110,13 +109,21 @@ CONSTANTS = {
 # 0 rudder, 1 elevator, 2 throttle, 3 aileron).
 AETR = [3, 1, 2, 0]
 NAMES = {4: "ARM", 5: "MODE", 6: "BEEPER", 7: "TURTLE", 11: "BLKBOX", 13: "VTXPIT"}
+
+# Outputs: throttle low, sticks centred, every aux switch low.
+OUT_IDLE = {0: 0, 1: 0, 2: -1024, 3: 0, **{i: -1024 for i in range(4, 15)}}
+# Outputs: sticks deflected, switches in mixed positions, one past 100%.
+OUT_MOVING = {0: 620, 1: -410, 2: 300, 3: 1024, 4: 1024, 5: 0, 6: -1024, 7: 1024,
+              8: 1300, 9: -600, 10: 0, 11: 1024, 12: -1024, 13: 512, 14: 1024}
+# CRSF telemetry as EdgeTX names it. ANT is 1 or 2 for ELRS. None = no link.
+TLM_GOOD = {"RQly": 100, "1RSS": -38, "2RSS": -41, "ANT": 1, "RxBt": 16.6, "FM": "ACRO*"}
+TLM_POOR = {"RQly": 62, "1RSS": -95, "2RSS": -88, "ANT": 2, "RxBt": 22.3, "FM": "ANGL!"}
 SCENARIOS = {
-    # Throttle low, sticks centred, every aux switch low.
-    "idle": {0: 0, 1: 0, 2: -1024, 3: 0, **{i: -1024 for i in range(4, 15)}},
-    # Sticks deflected, switches in mixed positions, one output past 100%.
-    "moving": {0: 620, 1: -410, 2: 300, 3: 1024, 4: 1024, 5: 0, 6: -1024, 7: 1024,
-               8: 1300, 9: -600, 10: 0, 11: 1024, 12: -1024, 13: 512, 14: 1024},
+    "idle": (OUT_IDLE, None),
+    "linked": (OUT_MOVING, TLM_GOOD),
+    "warnings": (OUT_IDLE, TLM_POOR),
 }
+SENSOR_IDS = {name: 300 + i for i, name in enumerate(TLM_GOOD)}
 
 LUA_SETUP = r"""
 return function(sdroot, problem)
@@ -281,7 +288,8 @@ class Screen:
 
 
 class Radio:
-    """Mock EdgeTX runtime: lcd.*, model.*, outputs and stick settings."""
+    """Mock EdgeTX runtime: lcd.*, model.*, outputs, stick settings and
+    CRSF telemetry sensors."""
 
     def __init__(self, lua, problems):
         self.lua = lua
@@ -289,6 +297,10 @@ class Radio:
         self.screen = None
         self.outputs = {}
         self.names = dict(NAMES)
+        self.clock = 0             # getTime() ticks; advanced per frame
+        self.telemetry = None      # sensor name -> value while linked
+        self.discovered = set()    # sensors EdgeTX has created so far
+        self.last = {}             # last value of each sensor
         g = lua.globals()
         for name, value in CONSTANTS.items():
             g[name] = value
@@ -304,7 +316,37 @@ class Radio:
         g.getOutputValue = lambda i: int(self.outputs.get(int(i), 0))
         g.defaultChannel = lambda stick: AETR.index(int(stick)) if int(stick) in AETR else None
         g.getStickMode = lambda: 2
-        g.getTime = lambda: int(time.monotonic() * 100)
+        g.getTime = lambda: self.clock
+        g.getRSSI = self.get_rssi
+        g.getFieldInfo = self.get_field_info
+        g.getSourceValue = self.get_source_value
+
+    def set_telemetry(self, values):
+        """Start (dict) or stop (None) the link. Like EdgeTX, sensors are
+        created when their first value arrives and stay afterwards."""
+        self.telemetry = values
+        if values:
+            self.discovered.update(values)
+            self.last.update(values)
+
+    def get_rssi(self):
+        lq = (self.telemetry or {}).get("RQly", 0)
+        return min(99, lq), 45, 42
+
+    def get_field_info(self, name):
+        name = str(name)
+        if name not in self.discovered:
+            return None
+        return self.lua.table_from({"id": SENSOR_IDS[name], "name": name, "desc": ""})
+
+    def get_source_value(self, src):
+        """value, isCurrent, isFresh - or nothing for an unknown sensor."""
+        name = next((n for n, i in SENSOR_IDS.items() if i == int(src)), None)
+        if name is None or name not in self.discovered:
+            return None
+        if self.telemetry and name in self.telemetry:
+            return self.telemetry[name], True, True
+        return self.last.get(name, 0), False, False
 
     def rgb(self, r, g=None, b=None):
         if g is None:
@@ -365,8 +407,11 @@ def main():
     out.mkdir(exist_ok=True)
     written = []
 
-    def render(w, h, fonts, scenario, light=False, wgt=None, opts=None):
-        radio.outputs = SCENARIOS[scenario]
+    def render(w, h, fonts, outputs, telemetry, wgt=None, light=False):
+        """Advance the clock, set the radio's state and run one refresh()."""
+        radio.clock += 50
+        radio.outputs = outputs
+        radio.set_telemetry(telemetry)
         radio.screen = Screen(w, h, fonts, problems)
         if wgt is None:
             opts = default_options(widget)
@@ -376,13 +421,22 @@ def main():
         widget.refresh(wgt, None, None)
         return wgt, radio.screen
 
+    def fresh_radio():
+        radio.names = dict(NAMES)
+        radio.discovered, radio.last = set(), {}
+
+    def expect(screen, text, what):
+        if text not in screen.texts:
+            problems.add(f"{screen.w}x{screen.h}: {what}: no {text!r} on screen")
+
     for size in args.sizes.split(","):
         w, h = (int(v) for v in size.lower().split("x"))
         fonts = Fonts(args.fonts, "lrg" if w >= 800 else "std")
-        frames = [("idle", False), ("moving", False), ("idle", True)]
+        frames = [("idle", False), ("linked", False), ("warnings", False), ("linked", True)]
         for scenario, light in frames:
+            fresh_radio()
             try:
-                wgt, screen = render(w, h, fonts, scenario, light)
+                wgt, screen = render(w, h, fonts, *SCENARIOS[scenario], light=light)
             except lupa52.LuaError as e:
                 problems.add(f"{w}x{h} {scenario}: Lua error: {e}")
                 continue
@@ -394,21 +448,38 @@ def main():
             img.save(out / name)
             written.append(out / name)
 
-        # Lifecycle: names edited while the widget was hidden must show up.
+        # Lifecycle checks, frame by frame on one widget instance.
         try:
-            wgt, _ = render(w, h, fonts, "idle")
-            radio.names[4] = "ARMED"
+            fresh_radio()
+            # Sensors only exist once telemetry has started.
+            wgt, s = render(w, h, fonts, OUT_IDLE, None)
+            expect(s, "NO LINK", "no telemetry yet")
+            tlm = dict(TLM_GOOD, RxBt=16.8)
+            _, s = render(w, h, fonts, OUT_IDLE, tlm, wgt)
+            expect(s, "4S 16.8V", "cell count from a full 4S pack")
+            expect(s, "READY", "Betaflight '*' suffix means ready to arm")
+            _, s = render(w, h, fonts, OUT_IDLE, dict(tlm, RxBt=13.2), wgt)
+            expect(s, "4S 13.2V", "cell count kept while the pack sags")
+            _, s = render(w, h, fonts, OUT_IDLE, None, wgt)
+            expect(s, "NO LINK", "link lost")
+            _, s = render(w, h, fonts, OUT_IDLE, dict(tlm, RxBt=25.2, FM="AIR"), wgt)
+            expect(s, "6S 25.2V", "cell count worked out again after a pack swap")
+            expect(s, "ARMED", "no suffix means armed")
+            _, s = render(w, h, fonts, OUT_IDLE, dict(tlm, RxBt=0.1, FM="!FS!"), wgt)
+            expect(s, "NO PACK", "FC on USB power")
+            expect(s, "FAILSAFE", "Betaflight failsafe")
+            # Output names edited while the widget was hidden must show up.
+            radio.names[4] = "ARMSW"
             widget.background(wgt)
-            _, screen = render(w, h, fonts, "idle", wgt=wgt)
-            if "ARMED" not in screen.texts:
-                problems.add(f"{w}x{h}: output names not re-read after background()")
+            _, s = render(w, h, fonts, OUT_IDLE, None, wgt)
+            expect(s, "ARMSW", "output names re-read after background()")
             # A zone too small for the layout must not crash.
             wgt.zone.w, wgt.zone.h = 200, 100
-            render(200, 100, fonts, "idle", wgt=wgt)
+            render(200, 100, fonts, OUT_IDLE, None, wgt)
         except lupa52.LuaError as e:
             problems.add(f"{w}x{h} lifecycle: Lua error: {e}")
         finally:
-            radio.names = dict(NAMES)
+            fresh_radio()
 
     for name in lua.globals().GLOBAL_WRITES.values():
         problems.add(f"widget created a global variable: {name}")

@@ -12,6 +12,7 @@ local drawCircle = lcd.drawCircle
 local fillCircle = lcd.drawFilledCircle
 
 -- Fixed high-contrast colours rather than the theme's, for use in sunlight.
+-- `levels` are indexed by the status levels in telem.lua (NONE, OK, WARN, BAD).
 function M.palette(light)
   if light then
     return {
@@ -22,7 +23,8 @@ function M.palette(light)
       fg = BLACK,
       accent = lcd.RGB(0, 90, 210),
       barBg = lcd.RGB(200, 200, 200),
-      warn = lcd.RGB(200, 0, 0),
+      noLink = lcd.RGB(200, 0, 0),
+      levels = { [0] = BLACK, lcd.RGB(0, 140, 0), lcd.RGB(200, 120, 0), lcd.RGB(200, 0, 0) },
     }
   end
   return {
@@ -33,14 +35,15 @@ function M.palette(light)
     fg = WHITE,
     accent = YELLOW,
     barBg = lcd.RGB(60, 60, 60),
-    warn = ORANGE,
+    noLink = ORANGE,
+    levels = { [0] = WHITE, lcd.RGB(0, 230, 0), YELLOW, lcd.RGB(255, 60, 60) },
   }
 end
 
--- Placeholders until build steps 2-4 fill these panels in.
+-- Placeholders until build steps 3-4 fill these panels in.
 local VIDEO_VALUES = { "--", "--" }
 local ELRS_VALUES = { "--", "--", "--" }
-local QUAD_VALUES = { "NO LINK" }
+local QUAD_IDLE = { "NO LINK" }
 
 local LIMIT = 1024  -- output value at +/-100%
 
@@ -53,13 +56,45 @@ local function clamp(v)
   return v
 end
 
-local function panel(p, values, c, valueColor)
+local function frame(p, c)
   fillRect(p.x, p.y, p.w, p.h, c.panel)
   drawRect(p.x, p.y, p.w, p.h, c.line)
+end
+
+local function panel(p, values, c, valueColor)
+  frame(p, c)
   for i = 1, #p.cols do
     local col = p.cols[i]
     drawText(col.x, col.labelY, col.label, SMLSIZE + c.label)
     drawText(col.cx, col.cy, values[i], col.font + CENTER + VCENTER + valueColor)
+  end
+end
+
+-- QUAD strip: "NO LINK", or one cell each for link, pack, FC and VTX with
+-- the main value coloured by its status and a detail beside the label.
+local function quadStrip(L, t, c)
+  if not t.linked then
+    panel(L.stripIdle, QUAD_IDLE, c, c.noLink)
+    return
+  end
+  local p, pad = L.strip, L.pad
+  frame(p, c)
+  local top, bottom, n = p.y + pad, p.y + p.h - pad - 1, #p.cols
+  for i = 1, n do
+    local col, cell = p.cols[i], t.list[i]
+    -- Keep text a pad away from the separators between cells.
+    local left, right = col.x, col.right
+    if i > 1 then
+      local x = col.x - floor(pad / 2)
+      drawLine(x, top, x, bottom, SOLID, c.line)
+      left = left + pad
+    end
+    if i < n then
+      right = right - pad
+    end
+    drawText(left, col.labelY, col.label, SMLSIZE + c.label)
+    drawText(right, col.labelY, cell.sub, SMLSIZE + RIGHT + c.fg)
+    drawText(col.cx, col.cy, cell.main, col.font + CENTER + VCENTER + c.levels[cell.level])
   end
 end
 
@@ -122,7 +157,7 @@ function M.screen(wgt)
 
   panel(L.video, VIDEO_VALUES, c, c.fg)
   panel(L.elrs, ELRS_VALUES, c, c.fg)
-  panel(L.strip, QUAD_VALUES, c, c.warn)
+  quadStrip(L, wgt.telem, c)
 
   local s = wgt.sticks
   gimbal(L.left, s.left.x, s.left.y, c)

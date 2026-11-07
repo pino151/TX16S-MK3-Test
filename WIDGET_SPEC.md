@@ -41,11 +41,21 @@ Lay the screen out in zones. Suggested arrangement (Claude may propose a better 
   - **AUX:** 11 channels (CH5–CH15), two columns of 5, and one last one centered below:
     the channel's name as set on the radio's Outputs page, and a live bar/position
     indicator that fills from the centre.
-- **Status strip: QUAD.** Shows "NO LINK" until telemetry arrives, then:
-  - Link: LQ (RQly) with green/yellow/red and RSSI
-  - Pack: per-cell voltage, with cell count auto-detected and the total voltage
-  - FC: Betaflight flight mode / arming flags (`FM` sensor)
-  - VTX: the band/channel/frequency the FC reports over MSP (see Q1)
+- **Status strip: QUAD.** Shows "NO LINK" until telemetry arrives (`getRSSI()` stays 0 until
+  RQly streams). Then four cells, each with a big go/no-go value coloured green/yellow/red and
+  a detail beside its label:
+  - LINK: LQ (RQly). Green ≥80%, yellow ≥50%, red below. Detail: RSSI of the active antenna
+    (EdgeTX reports ELRS's `ANT` as 1 or 2).
+  - PACK: per-cell voltage. Green ≥4.00 V, yellow ≥3.75 V, red below, so a storage-charged or
+    part-used pack stands out. Detail: cell count and total, e.g. "4S 16.6V". The cell count is
+    worked out from the voltage when the link comes up (at most 4.40 V per cell) and kept while
+    linked, so sag can't lower it; the next connection works it out again. The `Cells` option
+    forces it. Below 2.5 V shows "NO PACK" (FC on USB power). Needs Betaflight's
+    `report_cell_voltage` OFF (the default), so RxBt is the pack voltage.
+  - FC: from the `FM` sensor. While disarmed Betaflight adds `*` (ready to arm), `!` (arming
+    blocked) or `?` (GPS rescue not ready), shown as READY (green) or NO ARM / NO GPS (yellow).
+    No suffix means armed: ARMED (red). `!FS!` shows !FS! / FAILSAFE (red). Detail: flight mode.
+  - VTX: the band/channel/frequency the FC reports over MSP (see Q1). "--" until step 5.
 
 Touch and screen size:
 - **Touch only works in fullscreen.** In App mode the widget fills the screen but gets no touch
@@ -63,13 +73,16 @@ Touch and screen size:
 Widget options (max 5):
 - `Light`: light background instead of black, for strong sun.
 - `StickMode`: 0 = use the radio's stick mode (needs EdgeTX 2.12+, otherwise mode 2), 1–4 to force one.
+- `Cells`: 0 = work out the quad's cell count from the voltage, 1–14 to force one.
 
 ## Data sources
 - Channel outputs: `getOutputValue()`. Aux labels come from `model.getOutput(i).name`, so they
   match the radio's Outputs page. Fall back to "CH5" etc. if the name is blank.
 - Quad telemetry: CRSF sensors RQly, 1RSS/2RSS, ANT, RxBt (battery voltage), FM (flight mode).
-  `Curr`, `Capa` and `Bat%` also exist. Look each one up once with `getFieldInfo()`. Show "--"
-  if a sensor is missing.
+  `Curr`, `Capa` and `Bat%` also exist. Look each one up once with `getFieldInfo()`; sensors
+  only exist after telemetry first arrives, so missing ones are looked up again every 2 s.
+  Read them with `getSourceValue()` (EdgeTX 2.11+) at most every 100 ms, and show "--" for a
+  sensor that's missing or not current.
 - ELRS settings (rate, power, telemetry ratio): read from the TX module using the CRSF parameter
   protocol (`crossfireTelemetryPush` / `crossfireTelemetryPop`, as the official ELRS Lua does).
   This must work **without** a quad connected. Find fields by name (Q2). Once linked, the
@@ -221,7 +234,7 @@ Protocol (same in 3.x and 4.x):
 ## Build order
 1. Static layout, plus live sticks and aux bars with output names. *(Done: `WIDGETS/PreRace/`.
    The MK2 compact layout is still to do.)*
-2. Quad telemetry status strip.
+2. Quad telemetry status strip. *(Done: `telem.lua`.)*
 3. Reading ELRS settings over CRSF.
 4. VTX channel picker and send.
 5. VTX read-back from the FC over MSP.

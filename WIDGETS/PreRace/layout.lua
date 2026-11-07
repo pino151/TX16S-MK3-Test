@@ -29,7 +29,8 @@ local function fitIndex(fonts, text, maxW, maxH)
 end
 
 -- A framed panel split into columns. Each column has a small label at the
--- top and one value centred in the space below. `cols` is a list of
+-- top (with room for a detail right-aligned on the same line) and one
+-- value centred in the space below. `cols` is a list of
 -- { label, sample text that sets the value font, relative width }.
 -- `inset` keeps the content clear of the panel's left edge (at least pad).
 -- `sameFont` gives every column the font of the tightest one.
@@ -50,6 +51,7 @@ local function panel(x, y, w, h, pad, labelH, cols, inset, sameFont)
     smallest = max(smallest, fi)
     p.cols[i] = {
       x = cx,
+      right = cx + cw - pad,
       labelY = y + pad,
       label = spec[1],
       font = FONTS[fi],
@@ -122,6 +124,7 @@ function M.compute(w, h, auxCount, atOrigin)
   end
 
   local pad = max(2, floor(h / 80))
+  L.pad = pad
   local _, labelH = lcd.sizeText("A", SMLSIZE)
   local innerW = w - 2 * pad
   local topH = floor(h * 0.28)
@@ -141,8 +144,15 @@ function M.compute(w, h, auxCount, atOrigin)
     { "TELEM", "1:128", 1 },
   }, pad, true)
 
-  -- Bottom strip: QUAD status.
-  L.strip = panel(pad, h - pad - stripH, innerW, stripH, pad, labelH, {
+  -- Bottom strip: QUAD status, as four cells once linked, else "NO LINK".
+  local stripY = h - pad - stripH
+  L.strip = panel(pad, stripY, innerW, stripH, pad, labelH, {
+    { "LINK", "100%", 1 },
+    { "PACK", "4.20V", 1 },
+    { "FC", "NO ARM", 1 },
+    { "VTX", "R8", 1 },
+  }, pad, true)
+  L.stripIdle = panel(pad, stripY, innerW, stripH, pad, labelH, {
     { "QUAD", "NO LINK", 1 },
   })
 
