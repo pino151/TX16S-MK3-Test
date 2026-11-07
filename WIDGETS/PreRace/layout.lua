@@ -11,8 +11,6 @@ local FONTS = { XXLSIZE, DBLSIZE, MIDSIZE, BOLD, SMLSIZE }
 -- Output names get one smaller step, for long names on small screens.
 local NAME_FONTS = { XXLSIZE, DBLSIZE, MIDSIZE, BOLD, SMLSIZE, TINSIZE or SMLSIZE }
 
-local AUX_ROWS = 6  -- two columns of 5, then one channel centred below
-
 local function fits(text, font, maxW, maxH)
   local w, h = lcd.sizeText(text, font)
   return w <= maxW and h <= maxH
@@ -91,27 +89,28 @@ local function gimbal(x, y, s, pad, labelH)
   }
 end
 
--- Aux cells: the first 10 channels in two columns of 5, the 11th centred
--- below. Designed for 11 channels.
+-- Aux cells in two columns, with an odd one out centred below (7 channels:
+-- two columns of 3, then one). Each is a name and a thin bar.
 local function auxGrid(x, y, w, h, pad, count)
-  local rowH = floor(h / AUX_ROWS)
+  local perCol = floor(count / 2)
+  local rowH = floor(h / (perCol + count % 2))
   local colW = floor((w - pad) / 2)
   local g = {
     rowH = rowH,
     colW = colW,
     nameW = floor(colW * 0.45),
     gap = pad,
-    barH = max(6, floor(rowH * 0.5)),
+    barH = max(3, floor(h / 48 + 0.5)),  -- thin: about 5 px on both radios
     nameFont = SMLSIZE,
     cells = {},
   }
   for i = 1, count do
     local cx, row
-    if i <= 10 then
-      row = (i - 1) % 5
-      cx = x + floor((i - 1) / 5) * (colW + pad)
+    if i <= 2 * perCol then
+      row = (i - 1) % perCol
+      cx = x + floor((i - 1) / perCol) * (colW + pad)
     else
-      row = 5
+      row = perCol
       cx = x + floor((w - colW) / 2)
     end
     g.cells[i] = { x = cx, y = y + row * rowH }
@@ -119,16 +118,19 @@ local function auxGrid(x, y, w, h, pad, count)
   return g
 end
 
--- Compact layout (small screens): one small vertical bar per aux channel,
--- numbered, for the main page. Fills up from the middle for +, down for -.
-local function miniBars(x, y, w, h, pad, labelH, count)
+-- Compact layout (small screens): one numbered vertical bar per aux channel
+-- for the main page, `thick` px wide and centred in its slot. Fills up from
+-- the middle for +, down for -.
+local function miniBars(x, y, w, h, pad, labelH, count, thick)
   local gap = max(2, pad)
-  local bw = floor((w - (count - 1) * gap) / count)
+  local slot = floor((w - (count - 1) * gap) / count)
   local barH = h - labelH - pad
   local m = { bars = {}, labelY = y + barH + pad + floor(labelH / 2) }
-  local x0 = x + floor((w - (count * bw + (count - 1) * gap)) / 2)
+  local x0 = x + floor((w - (count * slot + (count - 1) * gap)) / 2)
   for i = 1, count do
-    m.bars[i] = { x = x0 + (i - 1) * (bw + gap), y = y, w = bw, h = barH }
+    local sx = x0 + (i - 1) * (slot + gap)
+    m.bars[i] = { x = sx + floor((slot - thick) / 2), y = y, w = thick, h = barH,
+      cx = sx + floor(slot / 2) }
   end
   return m
 end
@@ -195,11 +197,12 @@ function M.compute(w, h, auxCount, atOrigin)
   L.right = gimbal(w - pad - s, gy, s, pad, labelH)
   local auxX = 2 * pad + s
   if L.compact then
-    -- Main page: numbered mini bars. Aux page: the named bars, full size.
-    L.mini = miniBars(auxX, midY, w - 2 * auxX, midH, pad, labelH, auxCount)
+    -- Aux page: the named bars, full size. Main page: numbered mini bars,
+    -- as thin as the aux page's.
     local top = 2 * pad + labelH
     L.auxHeader = { x = pad, right = w - pad, y = pad }
     L.aux = auxGrid(pad, top, w - 2 * pad, h - top - pad, pad, auxCount)
+    L.mini = miniBars(auxX, midY, w - 2 * auxX, midH, pad, labelH, auxCount, L.aux.barH)
   else
     L.aux = auxGrid(auxX, midY, w - 2 * auxX, midH, pad, auxCount)
   end

@@ -11,35 +11,38 @@ local drawLine = lcd.drawLine
 local drawCircle = lcd.drawCircle
 local fillCircle = lcd.drawFilledCircle
 
--- Fixed high-contrast colours rather than the theme's, for use in sunlight.
+-- Fixed high-contrast colours rather than the theme's, for use in sunlight:
+-- sky blue for bars, the stick dot and selections, amber for warnings.
 -- `levels` are indexed by the status levels in telem.lua (NONE, OK, WARN,
 -- BAD), plus 4 for a value that's on its way (vtx.lua's PENDING).
 function M.palette(light)
   if light then
+    local amber = lcd.RGB(200, 115, 0)
     return {
       bg = WHITE,
       panel = lcd.RGB(236, 236, 236),
       line = lcd.RGB(140, 140, 140),
       label = lcd.RGB(70, 70, 70),
       fg = BLACK,
-      accent = lcd.RGB(0, 90, 210),
-      barBg = lcd.RGB(200, 200, 200),
-      noLink = lcd.RGB(200, 0, 0),
-      levels = { [0] = BLACK, lcd.RGB(0, 140, 0), lcd.RGB(200, 120, 0), lcd.RGB(200, 0, 0),
-        lcd.RGB(70, 70, 70) },
+      accent = lcd.RGB(0, 105, 200),
+      barBg = lcd.RGB(205, 205, 205),
+      noLink = amber,
+      levels = { [0] = BLACK, lcd.RGB(0, 140, 60), amber, lcd.RGB(200, 0, 0),
+        lcd.RGB(110, 110, 110) },
     }
   end
+  local amber = lcd.RGB(255, 165, 0)
   return {
     bg = BLACK,
     panel = lcd.RGB(22, 22, 22),
     line = lcd.RGB(95, 95, 95),
     label = lcd.RGB(175, 175, 175),
     fg = WHITE,
-    accent = YELLOW,
+    accent = lcd.RGB(40, 170, 235),
     barBg = lcd.RGB(60, 60, 60),
-    noLink = ORANGE,
-    levels = { [0] = WHITE, lcd.RGB(0, 230, 0), YELLOW, lcd.RGB(255, 60, 60),
-      lcd.RGB(175, 175, 175) },
+    noLink = amber,
+    levels = { [0] = WHITE, lcd.RGB(40, 210, 90), amber, lcd.RGB(255, 70, 70),
+      lcd.RGB(150, 150, 150) },
   }
 end
 
@@ -140,11 +143,10 @@ local function gimbal(g, ax, ay, c)
   drawCircle(cx, cy, r - 1, c.line)
   drawLine(cx - r, cy, cx + r, cy, DOTTED, c.line)
   drawLine(cx, cy - r, cx, cy + r, DOTTED, c.line)
-  -- Gimbal travel is square, so a corner deflection sits outside the ring.
+  -- The stick position is the dot. Gimbal travel is square, so a corner
+  -- deflection sits outside the ring.
   local px = cx + floor(readAxis(ax) * g.travel / LIMIT)
   local py = cy - floor(readAxis(ay) * g.travel / LIMIT)
-  drawLine(g.x, py, g.x + g.s - 1, py, SOLID, c.fg)
-  drawLine(px, g.y, px, g.y + g.s - 1, SOLID, c.fg)
   fillCircle(px, py, g.dot, c.accent)
   drawText(g.x, g.textY, ax.text, SMLSIZE + VCENTER + c.fg)
   drawText(g.x + g.s, g.textY, ay.text, SMLSIZE + VCENTER + RIGHT + c.fg)
@@ -165,7 +167,7 @@ local function auxCell(cell, item, a, c)
   elseif fw < 0 then
     fillRect(mid + fw, by, -fw, a.barH, c.accent)
   end
-  fillRect(mid - 1, by - 2, 2, a.barH + 4, c.fg)  -- centre mark
+  fillRect(mid - 1, by - 2, 2, a.barH + 4, c.label)  -- centre mark
 end
 
 -- Compact layout, main page: one numbered vertical bar per aux channel,
@@ -182,8 +184,8 @@ local function miniBars(m, aux, c)
     elseif fh < 0 then
       fillRect(b.x, mid, b.w, -fh, c.accent)
     end
-    fillRect(b.x, mid - 1, b.w, 2, c.fg)  -- centre mark
-    drawText(b.x + floor(b.w / 2), m.labelY, item.num, SMLSIZE + CENTER + VCENTER + c.label)
+    fillRect(b.x - 2, mid - 1, b.w + 4, 2, c.label)  -- centre mark
+    drawText(b.cx, m.labelY, item.num, SMLSIZE + CENTER + VCENTER + c.label)
   end
 end
 

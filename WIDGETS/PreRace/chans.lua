@@ -16,8 +16,8 @@ local MODE_AXES = {
 -- Axis letters as FPV pilots know them, indexed by stick number + 1.
 local AXIS_LETTER = { "Y", "P", "T", "R" }
 
-local FIRST_AUX = 4   -- output index of CH5 (0 = CH1)
-local AUX_COUNT = 11  -- CH5 to CH15
+local FIRST_AUX = 4  -- output index of CH5 (0 = CH1); CH1-CH4 are the sticks
+local AUX_COUNT = 7  -- CH5 to CH11
 
 -- One stick axis. `value` and `text` cache the last drawn value so the
 -- label string is only rebuilt when the value changes.

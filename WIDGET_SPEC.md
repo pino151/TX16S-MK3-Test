@@ -28,7 +28,9 @@ sliders, so the widget gets the whole screen as its zone. Not a tool script: a t
 other Lua while it's open, and needs a trip to SYS > Tools every time.
 
 ## Layout (800x480, touch)
-Lay the screen out in zones. Suggested arrangement (Claude may propose a better one):
+Lay the screen out in zones. Suggested arrangement (Claude may propose a better one).
+Colours: sky blue for the aux bars, the stick dot and picker selections; green, amber and
+red for status (no yellow, which was too harsh).
 - **Top left: VIDEO.** HDZero band/channel in very large text (e.g. "R3"), as set in the ELRS
   module's VTX Administrator, with its frequency in MHz beside the label and the power level
   (PWR, "--" for ELRS's "-": leave the VTX's power as it is). "--" and OFF when VTX Admin is
@@ -54,12 +56,12 @@ Lay the screen out in zones. Suggested arrangement (Claude may propose a better 
   Until values arrive the panel says READING, or why there are none: NO MODULE (no CRSF
   module set up in the model), NO REPLY, or NOT ELRS. Values show grey while being re-read.
 - **Middle: STICKS and AUX**, laid out like the radio: left gimbal, aux grid, right gimbal.
-  - **STICKS:** two gimbal circles with live crosshairs showing the actual channel outputs,
+  - **STICKS:** two gimbal circles, each with a dot showing the actual channel outputs,
     with the axis values (Y/T/R/P in %) underneath. The stick mode decides which gimbal
     shows which axes; channels come from the radio's default channel order.
-  - **AUX:** 11 channels (CH5–CH15), two columns of 5, and one last one centered below:
-    the channel's name as set on the radio's Outputs page, and a live bar/position
-    indicator that fills from the centre.
+  - **AUX:** 7 channels (CH5–CH11; CH1–CH4 are on the sticks), two columns of 3 and one
+    last one centered below: the channel's name as set on the radio's Outputs page, and a
+    thin (about 5 px) live bar that fills from the centre, with a grey centre mark.
 - **Status strip: QUAD.** Shows "NO LINK" until telemetry arrives (`getRSSI()` stays 0 until
   RQly streams). Then four cells, each with a big go/no-go value coloured green/yellow/red and
   a detail beside its label:
@@ -89,7 +91,8 @@ Touch and screen size:
 - **MK2 (480x272):** the full layout won't fit at sunlight-readable sizes, so zones under
   400 px tall get a compact layout with two pages instead of smaller text:
   - Main page: as on the MK3, but between the gimbals one small vertical bar per aux channel,
-    numbered 5–15 (fills up from the middle for +, down for -), and a taller QUAD strip.
+    numbered 5–11, as thin as the aux page's bars (fills up from the middle for +, down for
+    -), and a taller QUAD strip.
   - Aux page: the named aux bars over the whole screen, "TAP TO RETURN" at the top.
   - In fullscreen a tap on the middle band shows the aux page and any tap there comes back.
     Leaving fullscreen returns to the main page.

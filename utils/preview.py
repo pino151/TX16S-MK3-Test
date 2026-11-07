@@ -119,7 +119,7 @@ CONSTANTS = {
 # Radio data the scenarios use. CH1-CH4 in AETR order (stick numbers:
 # 0 rudder, 1 elevator, 2 throttle, 3 aileron).
 AETR = [3, 1, 2, 0]
-NAMES = {4: "ARM", 5: "MODE", 6: "BEEPER", 7: "TURTLE", 11: "BLKBOX", 13: "VTXPIT"}
+NAMES = {4: "ARM", 5: "MODE", 6: "BEEPER", 7: "TURTLE", 8: "BLKBOX", 10: "VTXPIT"}
 
 # Outputs: throttle low, sticks centred, every aux switch low.
 OUT_IDLE = {0: 0, 1: 0, 2: -1024, 3: 0, **{i: -1024 for i in range(4, 15)}}
