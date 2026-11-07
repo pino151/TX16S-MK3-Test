@@ -17,7 +17,7 @@ local MODE_AXES = {
 local AXIS_LETTER = { "Y", "P", "T", "R" }
 
 local FIRST_AUX = 4  -- output index of CH5 (0 = CH1); CH1-CH4 are the sticks
-local AUX_COUNT = 7  -- CH5 to CH11
+local AUX_COUNT = 6  -- CH5 to CH10
 
 -- One stick axis. `value` and `text` cache the last drawn value so the
 -- label string is only rebuilt when the value changes.

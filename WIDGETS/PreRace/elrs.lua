@@ -109,7 +109,6 @@ local MESSAGES = {
 function M.update(e, allowReread)
   local link = e.link
   e.crsf.update(link, allowReread)
-  e.refreshing = link.status == e.crsf.READING
 
   local f = link.fields
   if not (f["Packet Rate"] or f["Telem Ratio"] or f["Max Power"]) then

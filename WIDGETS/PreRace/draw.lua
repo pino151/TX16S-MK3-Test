@@ -83,8 +83,8 @@ end
 
 -- A panel of cells, each { main, sub, level }: the main value coloured by
 -- its status level and a detail right of the label, left out if there's no
--- room for it. `dim` greys the values (they're being read again).
-local function cells(p, list, c, pad, dim)
+-- room for it.
+local function cells(p, list, c, pad)
   frame(p, c)
   local top, bottom, n = p.y + pad, p.y + p.h - pad - 1, #p.cols
   for i = 1, n do
@@ -103,8 +103,7 @@ local function cells(p, list, c, pad, dim)
     if left + col.labelW + pad + subWidth(cell) <= right then
       drawText(right, col.labelY, cell.sub, SMLSIZE + RIGHT + c.fg)
     end
-    local color = dim and c.label or c.levels[cell.level]
-    drawText(col.cx, col.cy, cell.main, col.font + CENTER + VCENTER + color)
+    drawText(col.cx, col.cy, cell.main, col.font + CENTER + VCENTER + c.levels[cell.level])
   end
 end
 
@@ -122,7 +121,7 @@ local function elrsPanel(L, e, c)
   if e.message then
     panel(L.elrsIdle, e.messageList, c, c.levels[e.messageLevel])
   else
-    cells(L.elrs, e.list, c, L.pad, e.refreshing)
+    cells(L.elrs, e.list, c, L.pad)
   end
 end
 

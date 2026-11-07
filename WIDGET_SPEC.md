@@ -59,14 +59,14 @@ red for status (no yellow, which was too harsh).
   ratio or bandwidth ("1:64", "5859bps"). TX power from 1000mW is shown as "1W"/"2W" so all
   three values fit one font size. Telemetry Off shows yellow (the QUAD strip needs it).
   Until values arrive the panel says READING, or why there are none: NO MODULE (no CRSF
-  module set up in the model), NO REPLY, or NOT ELRS. Values show grey while being re-read.
+  module set up in the model), NO REPLY, or NOT ELRS. Values stay white while being re-read.
 - **Middle: STICKS and AUX**, laid out like the radio: left gimbal, aux grid, right gimbal.
   - **STICKS:** two gimbal circles, each with a dot showing the actual channel outputs,
     with the axis values (Y/T/R/P in %) underneath. The stick mode decides which gimbal
     shows which axes; channels come from the radio's default channel order.
-  - **AUX:** 7 channels (CH5–CH11; CH1–CH4 are on the sticks), two columns of 3 and one
-    last one centered below: the channel's name as set on the radio's Outputs page, and a
-    thin (about 5 px) live bar that fills from the centre, with a grey centre mark.
+  - **AUX:** 6 channels (CH5–CH10; CH1–CH4 are on the sticks), 2 columns of 3 rows with an
+    empty gap between the columns: the channel's name as set on the radio's Outputs page, and
+    a thin (about 5 px) live bar that fills from the centre, with a grey centre mark.
 - **Status strip: QUAD.** Shows "NO LINK" until telemetry arrives (`getRSSI()` stays 0 until
   RQly streams). Then three cells, each with a big go/no-go value coloured green/yellow/red and
   a detail beside its label:
@@ -92,15 +92,15 @@ Touch and screen size:
 - **MK2 (480x272):** the full layout won't fit at sunlight-readable sizes, so zones under
   400 px tall get a compact layout with two pages instead of smaller text:
   - Main page: as on the MK3, but between the gimbals one small vertical bar per aux channel,
-    numbered 5–11, as thin as the aux page's bars (fills up from the middle for +, down for
+    numbered 5–10, as thin as the aux page's bars (fills up from the middle for +, down for
     -), and a taller QUAD strip.
   - Aux page: the named aux bars over the whole screen, "TAP TO RETURN" at the top.
   - In fullscreen a tap on the middle band shows the aux page and any tap there comes back.
     Leaving fullscreen returns to the main page.
 - **Menu button corner:** in App mode EdgeTX draws its menu button over the top-left corner
-  (45 px square on the MK2, 62 px on the MK3, hidden in fullscreen). When the zone starts at
-  the screen's top-left, the layout keeps that corner clear: the ELRS panel's content starts
-  to the right of it.
+  (45 px square on the MK2, 62 px on the MK3) until the widget goes fullscreen, which a long
+  press anywhere does. The layout doesn't avoid it. A widget can't start in fullscreen: the
+  Lua API can only leave it (`lcd.exitFullScreen()`), and App mode keeps the button until then.
 
 Widget options (max 5):
 - `Light`: light background instead of black, for strong sun.

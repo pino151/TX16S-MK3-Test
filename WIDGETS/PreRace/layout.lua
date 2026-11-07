@@ -89,12 +89,15 @@ local function gimbal(x, y, s, pad, labelH)
   }
 end
 
--- Aux cells in two columns, with an odd one out centred below (7 channels:
--- two columns of 3, then one). Each is a name and a thin bar.
+-- Aux cells in two columns (6 channels: 2 columns of 3 rows), with an odd
+-- one out centred below. Each is a name and a thin bar. The columns have an
+-- empty gap between them, so the right column's names don't sit against the
+-- left column's bars.
 local function auxGrid(x, y, w, h, pad, count)
   local perCol = floor(count / 2)
+  local colGap = max(2 * pad, floor(w * 0.05))
   local rowH = floor(h / (perCol + count % 2))
-  local colW = floor((w - pad) / 2)
+  local colW = floor((w - colGap) / 2)
   local g = {
     rowH = rowH,
     colW = colW,
@@ -108,7 +111,7 @@ local function auxGrid(x, y, w, h, pad, count)
     local cx, row
     if i <= 2 * perCol then
       row = (i - 1) % perCol
-      cx = x + floor((i - 1) / perCol) * (colW + pad)
+      cx = x + floor((i - 1) / perCol) * (colW + colGap)
     else
       row = perCol
       cx = x + floor((w - colW) / 2)
@@ -139,11 +142,10 @@ end
 -- to a page of their own so nothing has to shrink (the MK2's 480x272).
 local COMPACT_BELOW = 400
 
--- `atOrigin`: the zone starts at the screen's top-left corner, as in App
--- mode, where EdgeTX's menu button sits over that corner (45 px square at
--- 480x272, 62 px at 800x480). The layout keeps that corner clear.
-function M.compute(w, h, auxCount, atOrigin)
-  local L = { w = w, h = h, atOrigin = atOrigin, compact = h < COMPACT_BELOW }
+-- EdgeTX's App-mode menu button is drawn over the top-left corner until the
+-- widget goes fullscreen (a long press). The layout doesn't avoid it.
+function M.compute(w, h, auxCount)
+  local L = { w = w, h = h, compact = h < COMPACT_BELOW }
   if w < 300 or h < 170 then
     L.tooSmall = true
     return L
@@ -155,21 +157,19 @@ function M.compute(w, h, auxCount, atOrigin)
   local innerW = w - 2 * pad
   local topH = floor(h * 0.28)
   local stripH = floor(h * (L.compact and 0.24 or 0.19))
-  local corner = atOrigin and (max(45, floor(h * 0.13)) + pad) or 0
 
-  -- Top band: ELRS on the left (its content clear of the menu button
-  -- corner), VIDEO on the right.
-  local videoW = floor(innerW * (L.compact and 0.30 or 0.27))
+  -- Top band: ELRS on the left, VIDEO on the right.
+  local videoW = floor(innerW * 0.34)
   local elrsW = innerW - videoW - pad
   -- Power from 1000mW is shown as "1W"/"2W", so "500mW" is the widest.
   L.elrs = panel(pad, pad, elrsW, topH, pad, labelH, {
     { "RATE", "DK500", 1 },
     { "TX PWR", "500mW", 1 },
     { "TLM", "1:128", 1 },
-  }, corner - pad, true)
+  }, pad, true)
   L.elrsIdle = panel(pad, pad, elrsW, topH, pad, labelH, {
     { "ELRS", "NO MODULE", 1 },
-  }, corner - pad)
+  })
   L.video = panel(2 * pad + elrsW, pad, videoW, topH, pad, labelH, {
     { "VIDEO", "R8", 58 },
     { "PWR", "200", 42 },  -- the FC's power labels, e.g. "25", "200"

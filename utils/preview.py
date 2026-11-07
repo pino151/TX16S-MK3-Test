@@ -12,8 +12,7 @@ MK3's internal ELRS 4.x module at 800x480, the MK2's Ranger Micro on ELRS
 
 It also reports problems that are easy to miss on the radio:
   - Lua syntax errors in any script under WIDGETS/ and SCRIPTS/
-  - drawing outside the widget's zone, text overlapping other text, and
-    text under EdgeTX's App-mode menu button
+  - drawing outside the widget's zone, and text overlapping other text
   - lines EdgeTX would drop (an end outside the screen)
   - global variables the widget creates (all widgets share one Lua state)
   - string method calls like s:format() (use string.format(s, ...))
@@ -79,12 +78,6 @@ def flag_rgb(flags):
     return (r << 3 | r >> 2, g << 2 | g >> 4, b << 3 | b >> 2)
 
 
-def menu_button_size(h):
-    """EdgeTX's menu button, drawn over the top-left corner in App mode
-    (mask_ui_bg_topbar_left.png: 45 px at 480x272, 62 px at 800x480)."""
-    return 62 if h >= 480 else 45
-
-
 # Literal colors from radio/src/gui/colorlcd/colors.cpp. Theme colors are
 # mocked as their default values.
 COLORS = {
@@ -119,7 +112,7 @@ CONSTANTS = {
 # Radio data the scenarios use. CH1-CH4 in AETR order (stick numbers:
 # 0 rudder, 1 elevator, 2 throttle, 3 aileron).
 AETR = [3, 1, 2, 0]
-NAMES = {4: "ARM", 5: "MODE", 6: "BEEPER", 7: "TURTLE", 8: "BLKBOX", 10: "VTXPIT"}
+NAMES = {4: "ARM", 5: "MODE", 6: "BEEPER", 7: "TURTLE", 8: "BLKBOX", 9: "VTXPIT"}
 
 # Outputs: throttle low, sticks centred, every aux switch low.
 OUT_IDLE = {0: 0, 1: 0, 2: -1024, 3: 0, **{i: -1024 for i in range(4, 15)}}
@@ -242,16 +235,6 @@ class Screen:
                     anchor="ls")
         self.texts.append(text)
         self.text_boxes.append((text, *box))
-
-    def app_mode_button(self):
-        """Report text under EdgeTX's menu button, then draw the button."""
-        size = menu_button_size(self.h)
-        for text, x0, y0, _, _ in self.text_boxes:
-            if x0 < size and y0 < size:
-                self.problems.add(f"{self.w}x{self.h}: text {text!r} is under "
-                                  f"EdgeTX's menu button")
-        overlay = Image.new("RGBA", (size, size), (20, 161, 229, 200))
-        self.img.paste(overlay, (0, 0), overlay)
 
     def sizeText(self, text, flags=0):
         _, line_h, _ = self.fonts.get(flags or 0)
@@ -542,7 +525,6 @@ def main():
             outputs, telemetry = SCENARIOS[scenario]
             wgt = new_widget(w, h, light)
             screen = run(wgt, w, h, fonts, frames=80, outputs=outputs, telemetry=telemetry)
-            screen.app_mode_button()  # the zone is the whole screen, at 0,0
             save(screen, scenario + ("-light" if light else ""))
 
         def tap_on(wgt, rect, frames=2):

@@ -75,12 +75,11 @@ local function background(wgt)
   updateData(wgt)
 end
 
--- The main layout, computed again whenever the zone changes size or place.
+-- The main layout, computed again whenever the zone changes size.
 local function mainLayout(wgt)
   local m, zone, lay = mods, wgt.zone, wgt.lay
-  local atOrigin = (zone.xabs or 0) == 0 and (zone.yabs or 0) == 0
-  if not lay or lay.w ~= zone.w or lay.h ~= zone.h or lay.atOrigin ~= atOrigin then
-    lay = m.layout.compute(zone.w, zone.h, #wgt.aux, atOrigin)
+  if not lay or lay.w ~= zone.w or lay.h ~= zone.h then
+    lay = m.layout.compute(zone.w, zone.h, #wgt.aux)
     wgt.lay = lay
     wgt.namesStale = true  -- name fonts depend on the layout
   end
