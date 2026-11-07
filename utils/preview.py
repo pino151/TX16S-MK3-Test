@@ -686,14 +686,19 @@ def main():
             wgt = new_widget(w, h)
             linked = dict(TLM_GOOD)
             s = run(wgt, w, h, fonts, frames=120, telemetry=linked, fullscreen=True)
-            strip = wgt.vtx.strip
+            # The VIDEO panel: VTX Admin's channel, green as the FC has it (MK3);
+            # with VTX Admin off, the FC's own channel (MK2). No VTX cell in
+            # the QUAD strip: the channel isn't shown twice.
+            video = wgt.vtx.video
             admin = module.vtx_admin()[0]
-            want = "R3" if admin else "R1"
-            expect(s, want, "the FC's VTX channel in the QUAD strip")
-            expect(s, "5732" if admin else "5658", "the FC's VTX frequency")
-            if strip.level != (1 if admin else 0):
-                problems.add(f"{w}x{h}: FC VTX cell level {strip.level}, expected "
-                             f"{'green: it matches VTX Admin' if admin else 'neutral: VTX Admin off'}")
+            expect(s, "R3" if admin else "R1", "the VTX channel in the VIDEO panel")
+            if video.sub != ("5732" if admin else "5658"):
+                problems.add(f"{w}x{h}: VIDEO detail {video.sub!r}, expected the frequency")
+            if video.level != (1 if admin else 0):
+                problems.add(f"{w}x{h}: VIDEO level {video.level}, expected "
+                             f"{'green: the FC has it' if admin else 'neutral: VTX Admin off'}")
+            if "VTX" in s.texts:
+                problems.add(f"{w}x{h}: the QUAD strip still has a VTX cell")
             # The picker uses the FC's table: no empty bands, its power labels,
             # and channels it doesn't have greyed out (and ignored).
             if lua_list(wgt.vtx.bandLabels) != ["R", "F", "E"]:
@@ -715,26 +720,21 @@ def main():
             s = tap_on(wgt, wgt.pick.ok, frames=120)
             if (fc.band, fc.ch) != (4, 4):
                 problems.add(f"{w}x{h}: the FC didn't get F4 (has {fc.band}, {fc.ch})")
-            expect(s, "F4", "the FC's new channel after a send")
-            if wgt.vtx.strip.level != 1:
-                problems.add(f"{w}x{h}: FC VTX cell not green after a send it took")
+            expect(s, "F4", "the new channel after a send")
+            if video.level != 1:
+                problems.add(f"{w}x{h}: VIDEO not green after a send the FC took")
             save(s, "linked-sent")
             # The FC on another channel than VTX Admin, then in pit mode, then
             # without a VTX: each shows yellow at the next read.
-            fc.ch = 5
-            radio.clock += 1000
-            s = run(wgt, w, h, fonts, frames=30, telemetry=linked)
-            expect(s, "F5", "the FC's channel when it differs from VTX Admin")
-            if wgt.vtx.strip.level != 2:
-                problems.add(f"{w}x{h}: FC VTX cell not yellow when it differs from VTX Admin")
-            fc.pit = 1
-            radio.clock += 1000
-            s = run(wgt, w, h, fonts, frames=30, telemetry=linked)
-            expect(s, "PIT", "VTX in pit mode")
-            fc.vtx_type = 255
-            radio.clock += 1000
-            s = run(wgt, w, h, fonts, frames=30, telemetry=linked)
-            expect(s, "NO VTX", "FC without a VTX")
+            for change, detail, what in ((("ch", 5), "FC F5", "the FC on another channel"),
+                                         (("pit", 1), "PIT", "the VTX in pit mode"),
+                                         (("vtx_type", 255), "NO VTX", "an FC without a VTX")):
+                setattr(fc, *change)
+                radio.clock += 1000
+                run(wgt, w, h, fonts, frames=30, telemetry=linked)
+                if (video.sub, video.level) != (detail, 2):
+                    problems.add(f"{w}x{h}: {what}: VIDEO shows {video.sub!r} at level "
+                                 f"{video.level}, expected {detail!r} in amber")
             # A different quad after the link drops; its replies come in small
             # chunks and the first answer is lost.
             run(wgt, w, h, fonts, frames=10)
@@ -744,7 +744,7 @@ def main():
             s = run(wgt, w, h, fonts, frames=200, telemetry=linked, fullscreen=True)
             # VTX Admin is F4 since the send, so ELRS gives the new quad F4.
             expect(s, "F4", "VTX Admin's channel on a newly connected quad")
-            if wgt.vtx.strip.level != 1:
+            if video.level != 1:
                 problems.add(f"{w}x{h}: new quad on VTX Admin's channel not shown green")
             if lua_list(wgt.vtx.bandLabels) != ["R", "F", "E"]:
                 problems.add(f"{w}x{h}: VTX table not read from chunked MSP replies")

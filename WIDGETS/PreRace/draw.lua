@@ -108,7 +108,7 @@ local function cells(p, list, c, pad, dim)
   end
 end
 
--- QUAD strip: "NO LINK", or cells for link, pack, FC and VTX.
+-- QUAD strip: "NO LINK", or cells for link, pack and FC.
 local function quadStrip(L, wgt, c)
   if wgt.telem.linked then
     cells(L.strip, wgt.stripCells, c, L.pad)

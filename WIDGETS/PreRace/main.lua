@@ -50,7 +50,7 @@ local function create(zone, opts)
     m.msp.handle(wgt.msp, data)
   end
   local t = wgt.telem
-  wgt.stripCells = { t.link, t.pack, t.fc, wgt.vtx.strip }  -- QUAD strip order
+  wgt.stripCells = { t.link, t.pack, t.fc }  -- QUAD strip order
   applyOptions(wgt, opts)
   return wgt
 end

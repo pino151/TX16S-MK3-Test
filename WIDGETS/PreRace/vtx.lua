@@ -205,9 +205,8 @@ end
 
 function M.new()
   local v = {
-    video = cell(),  -- VIDEO panel: band and channel, frequency
+    video = cell(),  -- VIDEO panel: band and channel, frequency or FC status
     power = cell(),  -- VIDEO panel: power level
-    strip = cell(),  -- QUAD strip VTX cell: what the FC has
     state = "idle",  -- idle, writing, settling, verifying, sent or failed
     ui = "main",     -- main, picker or confirm
     sel = { band = 5, ch = 1, pwr = 0 },
@@ -255,52 +254,61 @@ local function queryFc(v, msp, m, linked, armed, now)
   end
 end
 
-local function formatStrip(v, band, ch)
-  local s, fc = v.strip, v.fc
-  if not fc then
-    -- Not read from the FC (yet): what ELRS sends when the quad connects.
-    if not band then
-      s.main, s.sub, s.level = "--", "", NONE
-    elseif band == 0 then
-      s.main, s.sub, s.level = "--", "OFF", NONE
-    else
-      s.main, s.sub, s.level = letter(v, band) .. ch, "SENT", NONE
-    end
-    return
-  end
-  if fc.type == 0 or fc.type == 255 then  -- Betaflight: unsupported or unknown device
-    s.main, s.sub, s.level = "--", "NO VTX", WARN
-    return
-  end
-  s.main = fc.band > 0 and (letter(v, fc.band) .. fc.ch) or tostring(fc.freq)
-  s.sub = fc.pit == 1 and "PIT" or (fc.freq > 0 and tostring(fc.freq) or "")
-  if fc.pit == 1 then
-    s.level = WARN
-  elseif not band or band == 0 then
-    s.level = NONE  -- VTX Admin is off: nothing to compare with
-  elseif band == fc.band and ch == fc.ch then
-    s.level = OK    -- the FC has what VTX Admin sends
-  else
-    s.level = WARN
-  end
-end
-
+-- The VIDEO panel. The channel is VTX Admin's (what ELRS sends), coloured by
+-- what the FC reports once read: green if the FC has it, amber if not, with
+-- the FC's side as the detail ("FC R5", "PIT", "NO VTX"). With VTX Admin
+-- off it shows the FC's own channel. While a send runs, and for a few
+-- seconds after, the colour shows the send: grey, then green or red.
 local function formatCells(v, f)
   local band, ch, pwr = current(f)
-  local video, power = v.video, v.power
-  if not band then
-    video.main, video.sub, power.main = "--", "", "--"
-  elseif band == 0 then
-    video.main, video.sub, power.main = "--", "OFF", "--"
-  else
+  local video, power, fc = v.video, v.power, v.fc
+  local fcName  -- the FC's channel, nil if it has no VTX device
+  if fc and fc.type ~= 0 and fc.type ~= 255 then  -- Betaflight: unsupported, unknown
+    fcName = fc.band > 0 and (letter(v, fc.band) .. fc.ch) or tostring(fc.freq)
+  end
+  local level = NONE
+  if band and band > 0 then
     local mhz = freq(v, band, ch)
     video.main, video.sub = letter(v, band) .. ch, mhz > 0 and tostring(mhz) or ""
-    power.main = (pwr and pwr > 0) and powerLabel(v, pwr) or "--"
+    if fc then
+      if not fcName then
+        video.sub, level = "NO VTX", WARN
+      elseif fc.pit == 1 then
+        video.sub, level = "PIT", WARN
+      elseif fc.band == band and fc.ch == ch then
+        level = OK
+      else
+        video.sub, level = "FC " .. fcName, WARN
+      end
+    end
+  elseif fc then
+    if fcName then
+      video.main = fcName
+      video.sub = fc.pit == 1 and "PIT" or (fc.freq > 0 and tostring(fc.freq) or "")
+      level = fc.pit == 1 and WARN or NONE
+    else
+      video.main, video.sub, level = "--", "NO VTX", WARN
+    end
+  else
+    video.main, video.sub = "--", band == 0 and "OFF" or ""
+  end
+  -- VTX Admin's power; if it leaves the power alone ("-"), the FC's.
+  if pwr and pwr > 0 then
+    power.main = powerLabel(v, pwr)
+  elseif fcName and fc.power > 0 then
+    power.main = powerLabel(v, fc.power)
+  else
+    power.main = "--"
   end
   local st = v.state
-  video.level = (st == "sent" and OK) or (st == "failed" and BAD)
-    or (st == "idle" and NONE) or PENDING
-  formatStrip(v, band, ch)
+  if st == "sent" then
+    level = OK
+  elseif st == "failed" then
+    level = BAD
+  elseif st ~= "idle" then
+    level = PENDING
+  end
+  video.level = level
 end
 
 -- Open the picker on the module's current settings. False if the module

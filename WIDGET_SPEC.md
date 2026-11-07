@@ -33,8 +33,13 @@ Colours: sky blue for the aux bars, the stick dot and picker selections; green, 
 red for status (no yellow, which was too harsh).
 - **Top left: VIDEO.** HDZero band/channel in very large text (e.g. "R3"), as set in the ELRS
   module's VTX Administrator, with its frequency in MHz beside the label and the power level
-  (PWR, "--" for ELRS's "-": leave the VTX's power as it is). "--" and OFF when VTX Admin is
-  off. Tap it (in fullscreen) to open the picker:
+  (PWR; if VTX Admin leaves the power alone ("-"), the FC's). This is the only place the
+  channel is shown. Once the FC has answered over MSP (see Q1):
+  - Green when the FC has VTX Admin's channel (confirmed), amber when not, with the FC's side
+    as the detail: "FC R5" (another channel), "PIT" (pit mode) or "NO VTX" (no VTX device).
+  - With VTX Admin off: the FC's own channel and frequency (amber only for pit mode or no VTX).
+  - Before the FC answers: white, or "--" and OFF when VTX Admin is off.
+  Tap it (in fullscreen) to open the picker:
   - Bands R, F, E, B, A (ELRS's L isn't in Betaflight's default VTX table), channels 1–8,
     power -/1–8, then CANCEL or SEND. The heading shows the choice, e.g. "R3  5732MHz  PWR 2".
   - SEND opens the confirmation: "Send this to the VTX? ELRS sends it to every quad that
@@ -63,7 +68,7 @@ red for status (no yellow, which was too harsh).
     last one centered below: the channel's name as set on the radio's Outputs page, and a
     thin (about 5 px) live bar that fills from the centre, with a grey centre mark.
 - **Status strip: QUAD.** Shows "NO LINK" until telemetry arrives (`getRSSI()` stays 0 until
-  RQly streams). Then four cells, each with a big go/no-go value coloured green/yellow/red and
+  RQly streams). Then three cells, each with a big go/no-go value coloured green/yellow/red and
   a detail beside its label:
   - LINK: LQ (RQly). Green ≥80%, yellow ≥50%, red below. Detail: RSSI of the active antenna
     (EdgeTX reports ELRS's `ANT` as 1 or 2).
@@ -76,11 +81,7 @@ red for status (no yellow, which was too harsh).
   - FC: from the `FM` sensor. While disarmed Betaflight adds `*` (ready to arm), `!` (arming
     blocked) or `?` (GPS rescue not ready), shown as READY (green) or NO ARM / NO GPS (yellow).
     No suffix means armed: ARMED (red). `!FS!` shows !FS! / FAILSAFE (red). Detail: flight mode.
-  - VTX: the band/channel the FC reports over MSP, with its frequency. Green when it matches
-    VTX Admin (confirmed), yellow when it differs, white when VTX Admin is off. "PIT" (yellow)
-    when the VTX is in pit mode, "NO VTX" (yellow) when the FC has no VTX device. Before the
-    FC has answered: the module's VTX Admin setting with "SENT" (ELRS sends it when a quad
-    connects, but nothing confirms it arrived), or OFF.
+  - The VTX channel is in the VIDEO panel only, coloured by what the FC reports.
 
 Touch and screen size:
 - **Touch only works in fullscreen.** In App mode the widget fills the screen but gets no touch
@@ -186,10 +187,10 @@ Caveats:
   power and telemetry ratio are per model). While Band isn't Off, ELRS **re-sends it every time
   any quad connects**.
 
-What to show (as built: the QUAD strip's VTX cell, see Layout):
-- Before the FC answers (no link, telemetry off): VTX Admin's setting with "SENT".
+What to show (as built: the VIDEO panel, see Layout):
+- Before the FC answers (no link, telemetry off): VTX Admin's setting, in white.
 - When the FC's setting matches VTX Admin: green. Only this state counts as confirmed.
-- When it doesn't match: yellow, with what the FC reports.
+- When it doesn't match: amber, with what the FC reports.
 
 ### Q2. ELRS parameter names, 3.x vs 4.x
 Field IDs are assigned when the module boots and differ between firmware versions and hardware,

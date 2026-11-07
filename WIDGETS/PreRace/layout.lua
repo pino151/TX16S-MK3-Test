@@ -154,7 +154,7 @@ function M.compute(w, h, auxCount, atOrigin)
   local _, labelH = lcd.sizeText("A", SMLSIZE)
   local innerW = w - 2 * pad
   local topH = floor(h * 0.28)
-  local stripH = floor(h * (L.compact and 0.23 or 0.19))
+  local stripH = floor(h * (L.compact and 0.24 or 0.19))
   local corner = atOrigin and (max(45, floor(h * 0.13)) + pad) or 0
 
   -- Top band: VIDEO on the left, ELRS on the right.
@@ -174,13 +174,13 @@ function M.compute(w, h, auxCount, atOrigin)
     { "ELRS", "NO MODULE", 1 },
   })
 
-  -- Bottom strip: QUAD status, as four cells once linked, else "NO LINK".
+  -- Bottom strip: QUAD status, as three cells once linked, else "NO LINK".
+  -- (The VTX channel the FC reports shows in the VIDEO panel.)
   local stripY = h - pad - stripH
   L.strip = panel(pad, stripY, innerW, stripH, pad, labelH, {
     { "LINK", "100%", 1 },
     { "PACK", "4.20V", 1 },
     { "FC", "NO ARM", 1 },
-    { "VTX", "R8", 1 },
   }, pad, true)
   L.stripIdle = panel(pad, stripY, innerW, stripH, pad, labelH, {
     { "QUAD", "NO LINK", 1 },
