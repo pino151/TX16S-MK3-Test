@@ -457,15 +457,17 @@ def main():
         zone = lua.table_from({"x": 0, "y": 0, "w": w, "h": h, "xabs": 0, "yabs": 0})
         return widget.create(zone, opts)
 
-    def run(wgt, w, h, fonts, frames=4, outputs=OUT_IDLE, telemetry=None, event=None, touch=None):
+    def run(wgt, w, h, fonts, frames=4, outputs=OUT_IDLE, telemetry=None, event=None, touch=None,
+            fullscreen=False):
         """Set the radio's state, then call refresh() `frames` times, one step
-        apart. The first call gets `event`, and `touch` as (x, y)."""
+        apart. The first call gets `event`, and `touch` as (x, y). In
+        fullscreen the others get event 0, otherwise nil (as EdgeTX does)."""
         radio.outputs = outputs
         radio.set_telemetry(telemetry)
         for i in range(frames):
             radio.clock += step
             radio.screen = Screen(w, h, fonts, problems)
-            ev = event if i == 0 else None
+            ev = event if i == 0 else (0 if fullscreen else None)
             ts = lua.table_from({"x": touch[0], "y": touch[1], "tapCount": 1}) if ev and touch else None
             widget.refresh(wgt, ev, ts)
         return radio.screen
@@ -497,18 +499,26 @@ def main():
             make_module = fake_elrs.mk2_ranger_micro
             elrs_texts = ["250Hz", "100mW", "1:16", "5859bps"]
 
+        def save(screen, label):
+            img = screen.img
+            if args.scale > 1:
+                img = img.resize((w * args.scale, h * args.scale), Image.NEAREST)
+            name = f"{folder}-{w}x{h}-{label}.png"
+            img.save(out / name)
+            written.append(out / name)
+
         def screenshot(scenario, light):
             fresh_radio(make_module())
             outputs, telemetry = SCENARIOS[scenario]
             wgt = new_widget(w, h, light)
             screen = run(wgt, w, h, fonts, frames=80, outputs=outputs, telemetry=telemetry)
             screen.app_mode_button()  # the zone is the whole screen, at 0,0
-            img = screen.img
-            if args.scale > 1:
-                img = img.resize((w * args.scale, h * args.scale), Image.NEAREST)
-            name = f"{folder}-{w}x{h}-{scenario}{'-light' if light else ''}.png"
-            img.save(out / name)
-            written.append(out / name)
+            save(screen, scenario + ("-light" if light else ""))
+
+        def tap_on(wgt, rect, frames=2):
+            """A tap in the middle of a layout rectangle, in fullscreen."""
+            centre = (int(rect.x + rect.w // 2), int(rect.y + rect.h // 2))
+            return run(wgt, w, h, fonts, frames=frames, event=tap, touch=centre, fullscreen=True)
 
         def check_telemetry():
             fresh_radio(make_module())
@@ -549,7 +559,8 @@ def main():
             # every chunk of the fields it keeps.
             names = {f["name"] for f in module.fields}
             kept = {module.id_of(n) for n in ("RF Band", "Packet Rate", "Telem Ratio",
-                                              "Max Power", "Dynamic") if n in names}
+                                              "Max Power", "Dynamic", "Band", "Band/Enable",
+                                              "Channel", "Pwr Lvl", "Send VTx") if n in names}
             if max(i for i, _ in module.reads) > max(kept):
                 problems.add(f"{w}x{h}: the ELRS scan read past the fields it needs")
             if {i for i, c in module.reads if c > 0} - kept:
@@ -578,11 +589,69 @@ def main():
                 s = run(new_widget(w, h), w, h, fonts, frames=100)
                 expect(s, text, "ELRS panel message")
 
+        def check_vtx():
+            module = make_module()
+            band = "Band/Enable" if "Band/Enable" in {f["name"] for f in module.fields} else "Band"
+            fresh_radio(module)
+            wgt = new_widget(w, h)
+            run(wgt, w, h, fonts, frames=80, fullscreen=True)
+            # A tap on the VIDEO panel opens the picker; CANCEL sends nothing.
+            s = tap_on(wgt, wgt.lay.video)
+            expect(s, "CANCEL", "VTX picker opens on a tap on the VIDEO panel")
+            save(s, "picker")
+            tap_on(wgt, wgt.pick.cancel)
+            if module.writes or wgt.vtx.ui != "main":
+                problems.add(f"{w}x{h}: CANCEL in the VTX picker didn't just close it")
+            # Choose F4 at power 2, SEND, then BACK and SEND again, then CONFIRM.
+            tap_on(wgt, wgt.lay.video)
+            for rect in (wgt.pick.rows[1][2], wgt.pick.rows[2][4], wgt.pick.rows[3][3]):
+                tap_on(wgt, rect)
+            s = tap_on(wgt, wgt.pick.ok)
+            expect(s, "CONFIRM", "SEND asks for confirmation")
+            expect(s, "F4  5800MHz  PWR 2", "the confirmation shows the choice")
+            expect(s, "ELRS sends it to every quad that connects,", "the confirmation explains")
+            save(s, "confirm")
+            s = tap_on(wgt, wgt.pick.cancel)
+            expect(s, "SEND", "BACK returns to the picker")
+            tap_on(wgt, wgt.pick.ok)
+            s = tap_on(wgt, wgt.pick.ok, frames=60)
+            wanted = [(band, 4), ("Channel", 4), ("Pwr Lvl", 2), ("Send VTx", 1)]
+            if module.writes != wanted:
+                problems.add(f"{w}x{h}: VTX send wrote {module.writes}, expected {wanted}")
+            if wgt.vtx.state != "sent":
+                problems.add(f"{w}x{h}: VTX send not confirmed by reading it back "
+                             f"(state {wgt.vtx.state})")
+            expect(s, "F4", "the VIDEO panel shows the new channel")
+            # Leaving fullscreen closes the picker.
+            tap_on(wgt, wgt.lay.video)
+            run(wgt, w, h, fonts, frames=2)
+            if wgt.vtx.ui != "main":
+                problems.add(f"{w}x{h}: the VTX picker stayed open after leaving fullscreen")
+            # A module that ignores the writes: the send fails.
+            module = make_module(read_only=True)
+            fresh_radio(module)
+            wgt = new_widget(w, h)
+            run(wgt, w, h, fonts, frames=80, fullscreen=True)
+            tap_on(wgt, wgt.lay.video)
+            tap_on(wgt, wgt.pick.rows[2][4])
+            tap_on(wgt, wgt.pick.ok)
+            tap_on(wgt, wgt.pick.ok, frames=60)
+            if wgt.vtx.state != "failed":
+                problems.add(f"{w}x{h}: a VTX send the module ignored wasn't reported as failed")
+            # Without a module there's nothing to set, so the picker stays shut.
+            fresh_radio(None)
+            wgt = new_widget(w, h)
+            run(wgt, w, h, fonts, frames=10, fullscreen=True)
+            tap_on(wgt, wgt.lay.video)
+            if wgt.vtx.ui != "main":
+                problems.add(f"{w}x{h}: the VTX picker opened without a module")
+
         for scenario, light in (("idle", False), ("linked", False), ("warnings", False),
                                 ("linked", True)):
             guarded(f"{w}x{h} {scenario}", lambda: screenshot(scenario, light))
         guarded(f"{w}x{h} telemetry checks", check_telemetry)
         guarded(f"{w}x{h} ELRS checks", check_elrs)
+        guarded(f"{w}x{h} VTX checks", check_vtx)
         fresh_radio()
 
     for name in lua.globals().GLOBAL_WRITES.values():

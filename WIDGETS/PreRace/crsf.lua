@@ -1,12 +1,12 @@
 -- CRSF parameter protocol, as the ExpressLRS Lua script uses it: find the TX
--- module, then read its parameters by name. Never blocks: update() handles
--- whatever replies have arrived and sends at most one request per call.
+-- module, then read and write its parameters by name. Never blocks: update()
+-- handles whatever replies have arrived and sends at most one frame per call.
 -- Message layouts: WIDGET_SPEC.md, "Q2".
 
 local M = {}
 
 local PING, DEVICE_INFO = 0x28, 0x29
-local PARAM_ENTRY, PARAM_READ = 0x2B, 0x2C
+local PARAM_ENTRY, PARAM_READ, PARAM_WRITE = 0x2B, 0x2C, 0x2D
 local TX_MODULE, RADIO = 0xEE, 0xEA
 
 -- Field types.
@@ -74,14 +74,17 @@ local function parseField(b)
 end
 
 -- `wanted`: parameter names to keep. `required`: a full scan stops once all
--- of these are in.
-function M.new(wanted, required)
+-- of these are in. `aliases`: other names a parameter goes by (firmware name
+-- -> the name used here), e.g. ELRS 4.x's "Band/Enable" for "Band".
+function M.new(wanted, required, aliases)
   local s = {
     wanted = {},
     required = required,
+    aliases = aliases or {},
     fields = {},  -- name -> parsed field
-    ids = {},     -- name -> field id, kept for re-reads
+    ids = {},     -- name -> field id, kept for re-reads and writes
     version = 0,  -- goes up whenever a field is read
+    writes = {},  -- { id, value } waiting to be sent
     status = M.READING,
   }
   for i = 1, #wanted do
@@ -239,7 +242,7 @@ local function onParamEntry(s, data, now)
     local name, _, complete = readString(buf, 3)
     if complete then
       cur.named = true
-      if not s.wanted[name] then
+      if not s.wanted[s.aliases[name] or name] then
         nextField(s, now)
         return
       end
@@ -252,13 +255,55 @@ local function onParamEntry(s, data, now)
   end
 
   local f = parseField(buf)
-  if s.wanted[f.name] then
-    s.fields[f.name] = f
-    s.ids[f.name] = cur.id
-    s.found[f.name] = true
+  local name = s.aliases[f.name] or f.name
+  if s.wanted[name] then
+    s.fields[name] = f
+    s.ids[name] = cur.id
+    s.found[name] = true
     s.version = s.version + 1
   end
   nextField(s, now)
+end
+
+-- Queue a write of one byte (a selection index, a number, or a command
+-- status) to a parameter found earlier. False if it isn't known.
+function M.write(s, name, value)
+  local id = s.ids[name]
+  if not id then
+    return false
+  end
+  s.writes[#s.writes + 1] = { id, value }
+  return true
+end
+
+function M.clearWrites(s)
+  s.writes = {}
+end
+
+-- Read these known parameters again. False if busy (try again later).
+function M.read(s, names)
+  if M.busy(s) then
+    return false
+  end
+  local queue = {}
+  for i = 1, #names do
+    queue[#queue + 1] = s.ids[names[i]]
+  end
+  if #queue == 0 then
+    return false
+  end
+  startRead(s, queue, false)
+  return true
+end
+
+-- Whether reads or writes are still in progress.
+function M.busy(s)
+  return s.phase ~= "idle" or #s.writes > 0
+end
+
+-- Whether writes are still waiting to be sent.
+function M.writing(s)
+  return #s.writes > 0
 end
 
 -- Call from refresh() and background(). allowReread = false skips the
@@ -280,6 +325,15 @@ function M.update(s, allowReread)
     elseif command == PARAM_ENTRY then
       onParamEntry(s, data, now)
     end
+  end
+
+  -- Writes go first, one frame per update.
+  local w = s.writes[1]
+  if w and (s.phase == "idle" or s.phase == "read") then
+    if crossfireTelemetryPush(PARAM_WRITE, { TX_MODULE, RADIO, w[1], w[2] }) then
+      table.remove(s.writes, 1)
+    end
+    return
   end
 
   if s.phase == "ping" then

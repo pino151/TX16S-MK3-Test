@@ -10,11 +10,15 @@ local gsub, match = string.gsub, string.match
 local NONE, WARN = 0, 2
 
 -- Parameter names (ELRS 3.x and 4.x). "RF Band" only exists on ELRS 4.x
--- with an LR1121 (the MK3's internal module).
-local WANTED = { "RF Band", "Packet Rate", "Telem Ratio", "Max Power", "Dynamic" }
+-- with an LR1121 (the MK3's internal module). The VTX Administrator ones are
+-- used by vtx.lua; ELRS 4.x calls "Band" "Band/Enable".
+local WANTED = { "RF Band", "Packet Rate", "Telem Ratio", "Max Power", "Dynamic",
+  "Band", "Channel", "Pwr Lvl", "Send VTx" }
+local ALIASES = { ["Band/Enable"] = "Band" }
 -- A scan stops once these are in. "RF Band" comes before "Packet Rate", so
 -- if it exists it has been seen by then.
-local REQUIRED = { "Packet Rate", "Telem Ratio", "Max Power", "Dynamic" }
+local REQUIRED = { "Packet Rate", "Telem Ratio", "Max Power", "Dynamic",
+  "Band", "Channel", "Pwr Lvl", "Send VTx" }
 
 local function cell()
   return { main = "--", sub = "", level = NONE }
@@ -24,7 +28,7 @@ end
 function M.new(crsf)
   local e = {
     crsf = crsf,
-    link = crsf.new(WANTED, REQUIRED),
+    link = crsf.new(WANTED, REQUIRED, ALIASES),
     version = -1,
     rate = cell(),
     power = cell(),

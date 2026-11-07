@@ -28,6 +28,11 @@ local function fitIndex(fonts, text, maxW, maxH)
   return #fonts
 end
 
+-- The largest font in which `text` fits in maxW x maxH.
+function M.fit(text, maxW, maxH)
+  return FONTS[fitIndex(FONTS, text, maxW, maxH)]
+end
+
 -- A framed panel split into columns. Each column has a small label at the
 -- top (with room for a detail right-aligned on the same line) and one
 -- value centred in the space below. `cols` is a list of
@@ -54,6 +59,7 @@ local function panel(x, y, w, h, pad, labelH, cols, inset, sameFont)
       right = cx + cw - pad,
       labelY = y + pad,
       label = spec[1],
+      labelW = lcd.sizeText(spec[1], SMLSIZE),
       font = FONTS[fi],
       cx = cx + floor(cw / 2),
       cy = y + pad + labelH + floor(valueH / 2),

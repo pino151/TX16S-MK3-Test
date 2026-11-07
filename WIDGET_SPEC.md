@@ -29,9 +29,19 @@ other Lua while it's open, and needs a trip to SYS > Tools every time.
 
 ## Layout (800x480, touch)
 Lay the screen out in zones. Suggested arrangement (Claude may propose a better one):
-- **Top left: VIDEO.** HDZero band/channel in very large text (e.g. "R3"). Tap it to open a picker
-  (bands: R, F, E, etc.; channels 1–8), then send the choice via ELRS VTX Admin. When linked,
-  grey out channels the FC's vtxtable marks as unsupported (frequency 0, see Q1).
+- **Top left: VIDEO.** HDZero band/channel in very large text (e.g. "R3"), as set in the ELRS
+  module's VTX Administrator, with its frequency in MHz beside the label and the power level
+  (PWR, "--" for ELRS's "-": leave the VTX's power as it is). "--" and OFF when VTX Admin is
+  off. Tap it (in fullscreen) to open the picker:
+  - Bands R, F, E, B, A (ELRS's L isn't in Betaflight's default VTX table), channels 1–8,
+    power -/1–8, then CANCEL or SEND. The heading shows the choice, e.g. "R3  5732MHz  PWR 2".
+  - SEND opens the confirmation: "Send this to the VTX? ELRS sends it to every quad that
+    connects, now and later, until you change it." BACK or CONFIRM. EXIT, or leaving
+    fullscreen, closes either screen.
+  - CONFIRM writes Band, Channel and Pwr Lvl to the module, presses "Send VTx", waits 0.3 s
+    and reads them back. While that runs the channel shows grey; then green if the module holds
+    the new values, red if not (or after 5 s without an answer), for 5 s.
+  - Later (step 5): grey out channels the FC's vtxtable marks as unsupported (frequency 0).
 - **Top right: ELRS.** Packet rate, TX power and telemetry ratio. Display only, no editing.
   Each value has a detail beside its label: the rest of the rate name plus the RF band
   ("Full", "2.4G", "Full 900M"), dynamic power ("Dyn" or its AUX switch), and the telemetry
@@ -60,7 +70,9 @@ Lay the screen out in zones. Suggested arrangement (Claude may propose a better 
   - FC: from the `FM` sensor. While disarmed Betaflight adds `*` (ready to arm), `!` (arming
     blocked) or `?` (GPS rescue not ready), shown as READY (green) or NO ARM / NO GPS (yellow).
     No suffix means armed: ARMED (red). `!FS!` shows !FS! / FAILSAFE (red). Detail: flight mode.
-  - VTX: the band/channel/frequency the FC reports over MSP (see Q1). "--" until step 5.
+  - VTX: the band/channel/frequency the FC reports over MSP (see Q1, step 5). Until then: the
+    module's VTX Admin setting with "SENT" (ELRS sends it when a quad connects, but nothing
+    confirms it arrived), or OFF.
 
 Touch and screen size:
 - **Touch only works in fullscreen.** In App mode the widget fills the screen but gets no touch
@@ -245,7 +257,7 @@ Protocol (same in 3.x and 4.x):
    The MK2 compact layout is still to do.)*
 2. Quad telemetry status strip. *(Done: `telem.lua`.)*
 3. Reading ELRS settings over CRSF. *(Done: `crsf.lua`, `elrs.lua`.)*
-4. VTX channel picker and send.
+4. VTX channel picker and send. *(Done: `vtx.lua`, `picker.lua`.)*
 5. VTX read-back from the FC over MSP.
 
 Steps 1–2 can be tested in Companion. Steps 3–5 need the real radio (and a quad for 5): in

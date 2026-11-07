@@ -12,7 +12,8 @@ local drawCircle = lcd.drawCircle
 local fillCircle = lcd.drawFilledCircle
 
 -- Fixed high-contrast colours rather than the theme's, for use in sunlight.
--- `levels` are indexed by the status levels in telem.lua (NONE, OK, WARN, BAD).
+-- `levels` are indexed by the status levels in telem.lua (NONE, OK, WARN,
+-- BAD), plus 4 for a value that's on its way (vtx.lua's PENDING).
 function M.palette(light)
   if light then
     return {
@@ -24,7 +25,8 @@ function M.palette(light)
       accent = lcd.RGB(0, 90, 210),
       barBg = lcd.RGB(200, 200, 200),
       noLink = lcd.RGB(200, 0, 0),
-      levels = { [0] = BLACK, lcd.RGB(0, 140, 0), lcd.RGB(200, 120, 0), lcd.RGB(200, 0, 0) },
+      levels = { [0] = BLACK, lcd.RGB(0, 140, 0), lcd.RGB(200, 120, 0), lcd.RGB(200, 0, 0),
+        lcd.RGB(70, 70, 70) },
     }
   end
   return {
@@ -36,12 +38,11 @@ function M.palette(light)
     accent = YELLOW,
     barBg = lcd.RGB(60, 60, 60),
     noLink = ORANGE,
-    levels = { [0] = WHITE, lcd.RGB(0, 230, 0), YELLOW, lcd.RGB(255, 60, 60) },
+    levels = { [0] = WHITE, lcd.RGB(0, 230, 0), YELLOW, lcd.RGB(255, 60, 60),
+      lcd.RGB(175, 175, 175) },
   }
 end
 
--- Placeholder until build steps 4-5 fill this panel in.
-local VIDEO_VALUES = { "--", "--" }
 local QUAD_IDLE = { "NO LINK" }
 
 local LIMIT = 1024  -- output value at +/-100%
@@ -69,9 +70,17 @@ local function panel(p, values, c, valueColor)
   end
 end
 
+-- Width of a cell's detail text, measured only when the text changes.
+local function subWidth(cell)
+  if cell.sub ~= cell.measured then
+    cell.measured, cell.subW = cell.sub, lcd.sizeText(cell.sub, SMLSIZE)
+  end
+  return cell.subW
+end
+
 -- A panel of cells, each { main, sub, level }: the main value coloured by
--- its status level and a detail right of the label. `dim` greys the values
--- (they're being read again).
+-- its status level and a detail right of the label, left out if there's no
+-- room for it. `dim` greys the values (they're being read again).
 local function cells(p, list, c, pad, dim)
   frame(p, c)
   local top, bottom, n = p.y + pad, p.y + p.h - pad - 1, #p.cols
@@ -88,16 +97,18 @@ local function cells(p, list, c, pad, dim)
       right = right - pad
     end
     drawText(left, col.labelY, col.label, SMLSIZE + c.label)
-    drawText(right, col.labelY, cell.sub, SMLSIZE + RIGHT + c.fg)
+    if left + col.labelW + pad + subWidth(cell) <= right then
+      drawText(right, col.labelY, cell.sub, SMLSIZE + RIGHT + c.fg)
+    end
     local color = dim and c.label or c.levels[cell.level]
     drawText(col.cx, col.cy, cell.main, col.font + CENTER + VCENTER + color)
   end
 end
 
 -- QUAD strip: "NO LINK", or cells for link, pack, FC and VTX.
-local function quadStrip(L, t, c)
-  if t.linked then
-    cells(L.strip, t.list, c, L.pad)
+local function quadStrip(L, wgt, c)
+  if wgt.telem.linked then
+    cells(L.strip, wgt.stripCells, c, L.pad)
   else
     panel(L.stripIdle, QUAD_IDLE, c, c.noLink)
   end
@@ -168,9 +179,9 @@ function M.screen(wgt)
     return
   end
 
-  panel(L.video, VIDEO_VALUES, c, c.fg)
+  cells(L.video, wgt.vtx.list, c, L.pad)
   elrsPanel(L, wgt.elrs, c)
-  quadStrip(L, wgt.telem, c)
+  quadStrip(L, wgt, c)
 
   local s = wgt.sticks
   gimbal(L.left, s.left.x, s.left.y, c)

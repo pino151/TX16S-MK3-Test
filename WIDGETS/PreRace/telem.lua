@@ -47,9 +47,7 @@ function M.new()
     link = cell(),
     pack = cell(),
     fc = cell(),
-    vtx = cell(),  -- filled in by build step 5 (MSP read-back)
   }
-  t.list = { t.link, t.pack, t.fc, t.vtx }  -- strip order
   return t
 end
 

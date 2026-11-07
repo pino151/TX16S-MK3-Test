@@ -8,7 +8,8 @@ bytes. The receiver answers pings too, as it does once linked.
 
 import math
 
-PING, DEVICE_INFO, PARAM_ENTRY, PARAM_READ, ELRS_STATUS = 0x28, 0x29, 0x2B, 0x2C, 0x2E
+PING, DEVICE_INFO, PARAM_ENTRY, PARAM_READ, PARAM_WRITE, ELRS_STATUS = (
+    0x28, 0x29, 0x2B, 0x2C, 0x2D, 0x2E)
 TX_MODULE, RECEIVER, RADIO = 0xEE, 0xEC, 0xEA
 UINT8, TEXT_SELECTION, FOLDER, INFO, COMMAND = 0, 9, 11, 12, 13
 CHUNK = 56
@@ -41,9 +42,11 @@ def info(name, text, hidden=False):
 
 
 class FakeElrs:
-    def __init__(self, name, fields, serial=b"ELRS", silent=False):
+    def __init__(self, name, fields, serial=b"ELRS", silent=False, read_only=False):
         self.name, self.fields, self.serial, self.silent = name, fields, serial, silent
+        self.read_only = read_only  # ignore writes, to test a failed send
         self.reads = []    # (field id, chunk) of every parameter read
+        self.writes = []   # (field name, value) of every parameter write
         self.drop = set()  # (field id, chunk) replies to lose, once each
 
     def id_of(self, name):
@@ -56,7 +59,10 @@ class FakeElrs:
         return ([RADIO, origin] + cstr(name) + list(serial) + [0, 0, 0, 0]
                 + [0, 4, 1, 0] + [field_count, 1])
 
-    def payload(self, fid):
+    def value(self, name):
+        return self.fields[self.id_of(name) - 1]["value"]
+
+    def payload(self, fid, status=0, info=""):
         f = self.fields[fid - 1]
         t = f["type"]
         out = [f.get("parent", 0), t | (0x80 if f.get("hidden") else 0)]
@@ -69,7 +75,7 @@ class FakeElrs:
         elif t == FOLDER:
             out += [i + 1 for i, g in enumerate(self.fields) if g.get("parent") == fid] + [0xFF]
         elif t == COMMAND:
-            out += [0, 200] + cstr("")
+            out += [status, 200] + cstr(info)
         elif t == INFO:
             out += cstr(f["text"])
         return out
@@ -81,6 +87,8 @@ class FakeElrs:
         if command_id == PING:
             return [(DEVICE_INFO, self.device_info(TX_MODULE, self.name, len(self.fields), self.serial)),
                     (DEVICE_INFO, self.device_info(RECEIVER, "RP3 RX", 12, b"ELRS"))]
+        if command_id == PARAM_WRITE and data[0] == TX_MODULE:
+            return self.write(data[2], data[3])
         if command_id != PARAM_READ or data[0] != TX_MODULE:
             return []
         fid, chunk = data[2], data[3]
@@ -96,6 +104,21 @@ class FakeElrs:
             return []
         part = body[chunk * CHUNK:(chunk + 1) * CHUNK]
         return [(PARAM_ENTRY, [RADIO, TX_MODULE, fid, chunks - chunk - 1] + part)]
+
+    def write(self, fid, value):
+        """A parameter write. A command answers with its new status
+        ("Sending...") without being asked, as the firmware does."""
+        if not 1 <= fid <= len(self.fields):
+            return []
+        f = self.fields[fid - 1]
+        self.writes.append((f["name"], value))
+        if self.read_only:
+            return []
+        if f["type"] == COMMAND:
+            body = self.payload(fid, status=2, info="Sending...")  # 2 = executing
+            return [(PARAM_ENTRY, [RADIO, TX_MODULE, fid, 0] + body)]
+        f["value"] = value
+        return []
 
 
 TLM = "Std;Off;1:128;1:64;1:32;1:16;1:8;1:4;1:2;Race"

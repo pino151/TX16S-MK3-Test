@@ -1,6 +1,7 @@
 -- Pre-race check dashboard. See WIDGET_SPEC.md in the repo.
--- Build steps 1-3: layout, live sticks and aux bars with output names, the
--- QUAD telemetry strip, and ELRS settings read from the TX module.
+-- Build steps 1-4: layout, live sticks and aux bars with output names, the
+-- QUAD telemetry strip, ELRS settings read from the TX module, and the VTX
+-- channel picker that sends through ELRS VTX Administrator.
 
 local DIR = "/WIDGETS/PreRace/"
 
@@ -8,11 +9,12 @@ local DIR = "/WIDGETS/PreRace/"
 -- They are loaded on the first create() so the widget costs almost nothing
 -- unless it is actually placed on a screen.
 local mods
+local MODULES = { "chans", "layout", "draw", "telem", "crsf", "elrs", "vtx", "picker" }
 
 local function loadModules()
   if not mods then
     mods = {}
-    for _, name in ipairs({ "chans", "layout", "draw", "telem", "crsf", "elrs" }) do
+    for _, name in ipairs(MODULES) do
       mods[name] = assert(loadScript(DIR .. name .. ".lua"))()
     end
   end
@@ -39,7 +41,10 @@ local function create(zone, opts)
     namesStale = true,
     telem = m.telem.new(),
     elrs = m.elrs.new(m.crsf),
+    vtx = m.vtx.new(),
   }
+  local t = wgt.telem
+  wgt.stripCells = { t.link, t.pack, t.fc, wgt.vtx.strip }  -- QUAD strip order
   applyOptions(wgt, opts)
   return wgt
 end
@@ -48,11 +53,13 @@ local function update(wgt, opts)
   applyOptions(wgt, opts)
 end
 
--- Telemetry and the ELRS reader keep running whether or not the widget is
--- visible. The ELRS settings aren't re-read periodically while armed.
+-- Telemetry, the ELRS reader and VTX sends keep running whether or not the
+-- widget is visible. The ELRS settings aren't re-read periodically while armed.
 local function updateData(wgt)
-  mods.telem.update(wgt.telem, wgt.options.Cells)
-  mods.elrs.update(wgt.elrs, not wgt.telem.armed)
+  local m = mods
+  m.telem.update(wgt.telem, wgt.options.Cells)
+  m.elrs.update(wgt.elrs, not wgt.telem.armed)
+  m.vtx.update(wgt.vtx, m.crsf, wgt.elrs.link)
 end
 
 -- Only called while the widget is hidden, e.g. while the user is in the
@@ -62,31 +69,9 @@ local function background(wgt)
   updateData(wgt)
 end
 
-local function inside(r, x, y)
-  return r and x >= r.x and x < r.x + r.w and y >= r.y and y < r.y + r.h
-end
-
--- Events only arrive in fullscreen (long-press the widget to get there).
--- A tap on the ELRS panel, or ENTER, reads the ELRS settings again.
-local function onEvent(wgt, event, touchState)
-  if touchState then
-    if event == EVT_TOUCH_TAP and inside(wgt.lay.elrs, touchState.x, touchState.y) then
-      mods.elrs.refresh(wgt.elrs)
-    end
-  elseif event == EVT_VIRTUAL_ENTER then
-    mods.elrs.refresh(wgt.elrs)
-  end
-end
-
-local function refresh(wgt, event, touchState)
-  local m = mods
-  updateData(wgt)
-  if event and event ~= 0 then
-    onEvent(wgt, event, touchState)
-  end
-  local zone = wgt.zone
-  local lay = wgt.lay
-  -- EdgeTX updates the zone table in place when the widget is resized.
+-- The main layout, computed again whenever the zone changes size or place.
+local function mainLayout(wgt)
+  local m, zone, lay = mods, wgt.zone, wgt.lay
   local atOrigin = (zone.xabs or 0) == 0 and (zone.yabs or 0) == 0
   if not lay or lay.w ~= zone.w or lay.h ~= zone.h or lay.atOrigin ~= atOrigin then
     lay = m.layout.compute(zone.w, zone.h, #wgt.aux, atOrigin)
@@ -98,7 +83,64 @@ local function refresh(wgt, event, touchState)
     m.layout.fitNames(lay, wgt.aux)
     wgt.namesStale = false
   end
-  m.draw.screen(wgt)
+  return lay
+end
+
+local function pickerLayout(wgt)
+  local m, zone, p = mods, wgt.zone, wgt.pick
+  if not p or p.w ~= zone.w or p.h ~= zone.h then
+    p = m.picker.layout(zone.w, zone.h, m.layout.fit, m.vtx.COUNTS)
+    wgt.pick = p
+  end
+  return p
+end
+
+local function inside(r, x, y)
+  return r and x >= r.x and x < r.x + r.w and y >= r.y and y < r.y + r.h
+end
+
+-- Events only arrive in fullscreen (long-press the widget to get there).
+-- Main screen: a tap on the VIDEO panel opens the VTX picker; a tap on the
+-- ELRS panel, or ENTER, reads the ELRS settings again.
+-- Picker: taps choose and send; EXIT closes it.
+local function onEvent(wgt, event, touchState)
+  local m, v = mods, wgt.vtx
+  local tap = touchState and event == EVT_TOUCH_TAP
+  if v.ui ~= "main" then
+    if tap then
+      local kind, i = m.picker.hit(pickerLayout(wgt), v.ui, touchState.x, touchState.y)
+      if kind then
+        m.vtx.choose(v, kind, i, m.crsf, wgt.elrs.link)
+      end
+    elseif event == EVT_VIRTUAL_EXIT then
+      m.vtx.close(v)
+    end
+  elseif tap then
+    local lay, x, y = wgt.lay, touchState.x, touchState.y
+    if inside(lay.video, x, y) then
+      m.vtx.open(v, wgt.elrs.link.fields)
+    elseif inside(lay.elrs, x, y) then
+      m.elrs.refresh(wgt.elrs)
+    end
+  elseif event == EVT_VIRTUAL_ENTER then
+    m.elrs.refresh(wgt.elrs)
+  end
+end
+
+local function refresh(wgt, event, touchState)
+  local m, v = mods, wgt.vtx
+  updateData(wgt)
+  mainLayout(wgt)
+  if event == nil then
+    m.vtx.close(v)  -- not fullscreen (any more): the picker can't be used
+  elseif event ~= 0 then
+    onEvent(wgt, event, touchState)
+  end
+  if v.ui == "main" then
+    m.draw.screen(wgt)
+  else
+    m.picker.draw(pickerLayout(wgt), v, m.vtx, wgt.colors)
+  end
 end
 
 return {
