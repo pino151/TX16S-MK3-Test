@@ -35,6 +35,17 @@ M.CHANNEL_LABELS = { "1", "2", "3", "4", "5", "6", "7", "8" }
 -- ELRS's "Pwr Lvl": 0 is "-" (leave the VTX's power as it is), then 1-8.
 local DEFAULT_POWERS = { "-", "1", "2", "3", "4", "5", "6", "7", "8" }
 
+-- What an HDZero VTX does with each level, shown under the numbers until the
+-- FC's table is read. ELRS sends the level to Betaflight, which hands it to
+-- the VTX unchanged (vtx_msp.c), and the VTX maps it (hdzero-vtx firmware,
+-- msp_displayport.c, parse_vtx_params). A level past the VTX's own falls
+-- back to its minimum, 25mW. `real`: how many levels the VTX really has;
+-- `off`: the level that turns the video off.
+local HDZERO_RACE = { real = 3, off = 3,  -- Race, Whoop, Nano: 25mW and 200mW
+  "25mW", "200mW", "0mW", "25mW", "25mW", "25mW", "25mW", "25mW" }
+local HDZERO_FREESTYLE = { real = 5, off = 5,  -- Freestyle V1/V2, up to 1W
+  "25mW", "200mW", "500mW", "1W", "0mW", "25mW", "25mW", "25mW" }
+
 local SETTLE = 30          -- ticks after "Send VTx" before reading the module back
 local TIMEOUT = 500        -- ticks a send may take before it counts as failed
 local SHOW_RESULT = 500    -- ticks the sent/failed colour stays on
@@ -140,8 +151,10 @@ local function setOptions(v)
     for p = 1, #t.powers do
       v.powerLabels[p + 1] = t.powers[p]
     end
+    v.powerSubs = nil  -- the FC's own labels say it all
   else
     v.powerLabels = DEFAULT_POWERS
+    v.powerSubs = v.hdzero
   end
   v.options = v.options + 1
   fixSelection(v)
@@ -216,6 +229,7 @@ function M.new()
     nextConfig = 0,
     chanOk = {},
     options = 0,
+    hdzero = HDZERO_RACE,
   }
   v.list = { v.video, v.power }
   -- MSP reply handlers, made once rather than per request.
@@ -224,6 +238,18 @@ function M.new()
   v.onPower = function(b) onPower(v, b) end
   setOptions(v)
   return v
+end
+
+-- Which HDZero table the power levels follow (the widget's Freestyle option).
+function M.setFreestyle(v, on)
+  local t = on and HDZERO_FREESTYLE or HDZERO_RACE
+  if t ~= v.hdzero then
+    v.hdzero = t
+    if v.powerSubs then
+      v.powerSubs = t
+      v.options = v.options + 1
+    end
+  end
 end
 
 -- Ask the FC for its VTX setting, then (once per quad) its VTX table.

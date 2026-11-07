@@ -28,12 +28,14 @@ local options = {
   { "Light", BOOL, 0 },             -- 1 = light background, for strong sun
   { "StickMode", VALUE, 0, 0, 4 },  -- 0 = use the radio's stick mode
   { "Cells", VALUE, 0, 0, 14 },     -- 0 = work out the quad's cell count
+  { "Freestyle", BOOL, 0 },         -- VTX picker power labels: 0 = HDZero Race/Whoop, 1 = Freestyle
 }
 
 local function applyOptions(wgt, opts)
   wgt.options = opts
   wgt.colors = mods.draw.palette(opts.Light == 1)
   wgt.sticks = mods.chans.stickMap(opts.StickMode)
+  mods.vtx.setFreestyle(wgt.vtx, opts.Freestyle == 1)
 end
 
 local function create(zone, opts)

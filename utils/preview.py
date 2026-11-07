@@ -629,6 +629,25 @@ def main():
             s = tap_on(wgt, wgt.lay.video)
             expect(s, "CANCEL", "VTX picker opens on a tap on the VIDEO panel")
             save(s, "picker")
+            # Until the FC's table is read, the power buttons say what each
+            # level does on an HDZero VTX: the Race table, video off in amber.
+            for text in ("keep", "25mW", "200mW", "0mW"):
+                expect(s, text, "HDZero Race power labels under the numbers")
+            if "500mW" in s.texts:
+                problems.add(f"{w}x{h}: Freestyle power labels without the Freestyle option")
+            amber = flag_rgb(int(wgt.colors.levels[2]))
+            if s.text_colors.get("0mW") != amber:
+                problems.add(f"{w}x{h}: the video-off power level (0mW) isn't amber")
+            # The Freestyle option switches to HDZero Freestyle's table.
+            opts = default_options(widget)
+            opts["Freestyle"] = 1
+            widget.update(wgt, opts)
+            s = run(wgt, w, h, fonts, frames=2, event=0, fullscreen=True)
+            for text in ("500mW", "1W", "0mW"):
+                expect(s, text, "HDZero Freestyle power labels with the Freestyle option")
+            save(s, "picker-freestyle")
+            opts["Freestyle"] = 0
+            widget.update(wgt, opts)
             tap_on(wgt, wgt.pick.cancel)
             if module.writes or wgt.vtx.ui != "main":
                 problems.add(f"{w}x{h}: CANCEL in the VTX picker didn't just close it")
@@ -696,7 +715,11 @@ def main():
                 problems.add(f"{w}x{h}: picker bands {lua_list(wgt.vtx.bandLabels)} not from the FC table")
             if lua_list(wgt.vtx.powerLabels) != ["-", "25", "200"]:
                 problems.add(f"{w}x{h}: picker powers {lua_list(wgt.vtx.powerLabels)} not from the FC table")
-            tap_on(wgt, wgt.lay.video)
+            s = tap_on(wgt, wgt.lay.video)
+            # With the FC's table the buttons carry its own labels: no HDZero
+            # labels underneath.
+            if "keep" in s.texts or "200mW" in s.texts:
+                problems.add(f"{w}x{h}: HDZero power labels shown over the FC's own table")
             f = lua_list(wgt.vtx.bandLabels).index("F") + 1
             tap_on(wgt, wgt.pick.rows[1][f])
             if [wgt.vtx.chanOk[c] for c in range(1, 9)] != [False, True, False, True] + [False] * 4:

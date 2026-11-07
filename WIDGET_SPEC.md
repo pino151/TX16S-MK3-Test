@@ -48,6 +48,13 @@ red for status (no yellow, which was too harsh).
   Tap it (in fullscreen) to open the picker:
   - Bands R, F, E, B, A (ELRS's L isn't in Betaflight's default VTX table), channels 1–8,
     power -/1–8, then CANCEL or SEND. The heading shows the choice, e.g. "R3  5732MHz  PWR 2".
+  - Until the FC's table is read, each power button has what that level does on an HDZero
+    VTX underneath ("-" says "keep"). ELRS sends the level to Betaflight, which passes it to
+    the VTX unchanged, and HDZero's firmware maps it (`parse_vtx_params` in hdzero-vtx's
+    `src/msp_displayport.c`). Race/Whoop/Nano (default): 1 = 25mW, 2 = 200mW, 3 = 0mW,
+    4–8 = 25mW. Freestyle V1/V2 (`Freestyle` option): 1 = 25mW, 2 = 200mW, 3 = 500mW,
+    4 = 1W, 5 = 0mW, 6–8 = 25mW. A level past the VTX's own falls back to its minimum, so those
+    labels are dimmed; the 0mW level (video off) is amber.
   - EXIT, or leaving fullscreen, closes the picker without sending.
   - SEND sends straight away (no confirmation screen). It writes Band, Channel and Pwr Lvl
     to the module, presses "Send VTx", waits 0.3 s
@@ -124,6 +131,8 @@ Widget options (max 5):
 - `Light`: light background instead of black, for strong sun.
 - `StickMode`: 0 = use the radio's stick mode (needs EdgeTX 2.12+, otherwise mode 2), 1–4 to force one.
 - `Cells`: 0 = work out the quad's cell count from the voltage, 1–14 to force one.
+- `Freestyle`: 0 = the VTX picker's power labels follow HDZero Race/Whoop/Nano VTXs, 1 = HDZero
+  Freestyle V1/V2. A `BOOL`, since `CHOICE` options aren't in the 2.12 widget docs.
 
 ## Data sources
 - Status bar: `getValue("tx-voltage")` (volts, 0.1 V steps) every 0.5 s; battery range and
