@@ -31,7 +31,7 @@ other Lua while it's open, and needs a trip to SYS > Tools every time.
 Lay the screen out in zones. Suggested arrangement (Claude may propose a better one).
 Colours: sky blue for the aux bars, the stick dot and picker selections; green, amber and
 red for status (no yellow, which was too harsh).
-- **Status bar** (thin, along the top, on the MK3 and MK2 and on the MK2's aux page): the
+- **Status bar** (thin, along the top, on the MK3 and MK2): the
   date on the left (e.g. "Sat 7 Nov 2026"), the radio's battery on the right as an icon
   filled over the Radio Setup battery range plus the voltage, red at or below the radio's
   battery warning level. It stands in for EdgeTX's top bar, which App mode hides. No
@@ -54,7 +54,12 @@ red for status (no yellow, which was too harsh).
     `src/msp_displayport.c`). Race/Whoop/Nano (default): 1 = 25mW, 2 = 200mW, 3 = 0mW,
     4–8 = 25mW. Freestyle V1/V2 (`Freestyle` option): 1 = 25mW, 2 = 200mW, 3 = 500mW,
     4 = 1W, 5 = 0mW, 6–8 = 25mW. A level past the VTX's own falls back to its minimum, so those
-    labels are dimmed; the 0mW level (video off) is amber.
+    labels are dimmed; the 0mW level (video off) is amber. Level 4 is labelled 1W in red in
+    both tables (on a Race VTX it's really 25mW, but the user wants the reminder of what it
+    does on a Freestyle VTX).
+  - "POWER" sits level with the numbers and the table's name ("HDZ", or "HDZ FS") level with
+    the labels, in the same small font. Where any label doesn't fit its button with "mW"
+    (the MK2), they all drop it: "25", "200", "0", "1W".
   - EXIT, or leaving fullscreen, closes the picker without sending.
   - SEND sends straight away (no confirmation screen). It writes Band, Channel and Pwr Lvl
     to the module, presses "Send VTx", waits 0.3 s
@@ -114,14 +119,10 @@ Touch and screen size:
   Lua can leave fullscreen (`lcd.exitFullScreen()`) but can't enter it. So everything must read
   correctly without fullscreen; touch is only for the VIDEO picker and the refresh tap. This
   also makes it pocket-safe.
-- **MK2 (480x272):** the full layout won't fit at sunlight-readable sizes, so zones under
-  400 px tall get a compact layout with two pages instead of smaller text:
-  - Main page: as on the MK3, but between the gimbals one small vertical bar per aux channel,
-    numbered 5–10, as thin as the aux page's bars (fills up from the middle for +, down for
-    -), and a taller QUAD strip.
-  - Aux page: the named aux bars over the whole screen, "TAP TO RETURN" at the top.
-  - In fullscreen a tap on the middle band shows the aux page and any tap there comes back.
-    Leaving fullscreen returns to the main page.
+- **MK2 (480x272):** the same layout as the MK3, named horizontal aux bars included. Zones
+  under 400 px tall get a taller QUAD strip (0.24 of the height rather than 0.19) so its
+  values stay large and bold, which makes the gimbals a little smaller. (An earlier compact
+  layout put the named bars on a second page; dropped at the user's request.)
 - **Menu button corner:** in App mode EdgeTX draws its menu button over the top-left corner
   (45 px square on the MK2, 62 px on the MK3) until the widget goes fullscreen, which a long
   press anywhere does. The layout doesn't avoid it. A widget can't start in fullscreen: the
@@ -305,7 +306,7 @@ Protocol (same in 3.x and 4.x):
 
 ## Build order
 1. Static layout, plus live sticks and aux bars with output names. *(Done: `WIDGETS/PreRace/`.
-   The MK2 compact layout followed later; see "Touch and screen size".)*
+   The MK2 uses the same layout; see "Touch and screen size".)*
 2. Quad telemetry status strip. *(Done: `telem.lua`.)*
 3. Reading ELRS settings over CRSF. *(Done: `crsf.lua`, `elrs.lua`.)*
 4. VTX channel picker and send. *(Done: `vtx.lua`, `picker.lua`.)*

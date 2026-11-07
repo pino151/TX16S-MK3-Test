@@ -169,25 +169,6 @@ local function auxCell(cell, item, a, c)
   fillRect(mid - 1, by - 2, 2, a.barH + 4, c.label)  -- centre mark
 end
 
--- Compact layout, main page: one numbered vertical bar per aux channel,
--- filling up from the middle for + and down for -.
-local function miniBars(m, aux, c)
-  for i = 1, #aux do
-    local b, item = m.bars[i], aux[i]
-    local half = floor(b.h / 2)
-    local mid = b.y + half
-    fillRect(b.x, b.y, b.w, b.h, c.barBg)
-    local fh = floor(clamp(getOutputValue(item.ch)) * half / LIMIT)
-    if fh > 0 then
-      fillRect(b.x, mid - fh, b.w, fh, c.accent)
-    elseif fh < 0 then
-      fillRect(b.x, mid, b.w, -fh, c.accent)
-    end
-    fillRect(b.x - 2, mid - 1, b.w + 4, 2, c.label)  -- centre mark
-    drawText(b.cx, m.labelY, item.num, SMLSIZE + CENTER + VCENTER + c.label)
-  end
-end
-
 function M.screen(wgt)
   local L, c = wgt.lay, wgt.colors
   fillRect(0, 0, L.w, L.h, c.bg)
@@ -199,18 +180,6 @@ function M.screen(wgt)
     return
   end
 
-  local a, aux = L.aux, wgt.aux
-  if L.compact and wgt.page == "aux" then
-    -- Compact layout, aux page: the named bars over the whole screen.
-    local hd = L.auxHeader
-    drawText(hd.x, hd.y, "AUX", SMLSIZE + c.label)
-    drawText(hd.right, hd.y, "TAP TO RETURN", SMLSIZE + RIGHT + c.label)
-    for i = 1, #aux do
-      auxCell(a.cells[i], aux[i], a, c)
-    end
-    return
-  end
-
   cells(L.video, wgt.vtx.list, c, L.pad)
   elrsPanel(L, wgt.elrs, c)
   quadStrip(L, wgt, c)
@@ -219,12 +188,9 @@ function M.screen(wgt)
   gimbal(L.left, s.left.x, s.left.y, c)
   gimbal(L.right, s.right.x, s.right.y, c)
 
-  if L.compact then
-    miniBars(L.mini, aux, c)
-  else
-    for i = 1, #aux do
-      auxCell(a.cells[i], aux[i], a, c)
-    end
+  local a, aux = L.aux, wgt.aux
+  for i = 1, #aux do
+    auxCell(a.cells[i], aux[i], a, c)
   end
 end
 

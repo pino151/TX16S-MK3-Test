@@ -573,8 +573,6 @@ def main():
             radio.names[4] = "ARMSW"
             widget.background(wgt)
             s = run(wgt, w, h, fonts)
-            if wgt.lay.compact:
-                s = tap_on(wgt, wgt.lay.mid)  # the names are on the aux page
             expect(s, "ARMSW", "output names re-read after background()")
             # A zone too small for the layout must not crash.
             wgt.zone.w, wgt.zone.h = 200, 100
@@ -631,21 +629,40 @@ def main():
             save(s, "picker")
             # Until the FC's table is read, the power buttons say what each
             # level does on an HDZero VTX: the Race table, video off in amber.
-            for text in ("keep", "25mW", "200mW", "0mW"):
+            # "mW" only where every label fits with it (not on the MK2).
+            mw = "mW" if w >= 800 else ""
+            for text in ("keep", "25" + mw, "200" + mw, "0" + mw, "1W", "HDZ"):
                 expect(s, text, "HDZero Race power labels under the numbers")
-            if "500mW" in s.texts:
+            if "500" + mw in s.texts:
                 problems.add(f"{w}x{h}: Freestyle power labels without the Freestyle option")
             amber = flag_rgb(int(wgt.colors.levels[2]))
-            if s.text_colors.get("0mW") != amber:
+            red = flag_rgb(int(wgt.colors.levels[3]))
+            if s.text_colors.get("0" + mw) != amber:
                 problems.add(f"{w}x{h}: the video-off power level (0mW) isn't amber")
+            if s.text_colors.get("1W") != red:
+                problems.add(f"{w}x{h}: the 1W power level isn't red")
+            # "POWER" sits level with the numbers, "HDZ" level with the mW labels.
+            boxes = {t: b for t, *b in s.text_boxes}
+            for label, beside in (("POWER", "8"), ("HDZ", "1W")):
+                lb, bb = boxes.get(label), boxes.get(beside)
+                if lb and bb and abs((lb[1] + lb[3]) - (bb[1] + bb[3])) > 2:
+                    problems.add(f"{w}x{h}: {label!r} isn't level with {beside!r}")
             # The Freestyle option switches to HDZero Freestyle's table.
             opts = default_options(widget)
             opts["Freestyle"] = 1
             widget.update(wgt, opts)
             s = run(wgt, w, h, fonts, frames=2, event=0, fullscreen=True)
-            for text in ("500mW", "1W", "0mW"):
+            for text in ("500" + mw, "1W", "0" + mw, "HDZ FS"):
                 expect(s, text, "HDZero Freestyle power labels with the Freestyle option")
             save(s, "picker-freestyle")
+            # Each power label fits inside its button (tightest on the MK2).
+            powers = lua_list(wgt.pick.rows[3])
+            for i, r in enumerate(powers):
+                text = wgt.pick.subTexts[i + 1]
+                tw = s.fonts.width(text, CONSTANTS["SMLSIZE"])
+                if tw > r.w - 2:
+                    problems.add(f"{w}x{h}: power label {text!r} ({tw}px) doesn't fit its "
+                                 f"{r.w}px button")
             opts["Freestyle"] = 0
             widget.update(wgt, opts)
             tap_on(wgt, wgt.pick.cancel)
@@ -764,30 +781,24 @@ def main():
             tap_on(wgt, wgt.lay.video)
             save(tap_on(wgt, wgt.lay.video), "picker-fc")
 
-        def check_pages():
+        def check_aux():
+            # The same layout at every size: the named aux bars are on the
+            # main screen (MK2 too), and a tap between the sticks does nothing.
             fresh_radio(make_module(), make_fc())
             wgt = new_widget(w, h)
             run(wgt, w, h, fonts, frames=80, outputs=OUT_MOVING, telemetry=dict(TLM_GOOD),
                 fullscreen=True)
-            if not wgt.lay.compact:
-                tap_on(wgt, wgt.lay.mid)
-                if wgt.page != "main":
-                    problems.add(f"{w}x{h}: a full-size layout switched pages")
-                return
-            s = tap_on(wgt, wgt.lay.mid)
-            expect(s, "BEEPER", "compact layout: a tap on the middle shows the aux page")
-            expect(s, "TAP TO RETURN", "compact layout: the aux page says how to go back")
-            save(s, "aux")
-            s = tap_on(wgt, wgt.lay.mid)
-            expect(s, "READY", "compact layout: a tap on the aux page returns")
-            tap_on(wgt, wgt.lay.mid)
-            run(wgt, w, h, fonts, frames=2, telemetry=radio.telemetry)  # fullscreen left
-            if wgt.page != "main":
-                problems.add(f"{w}x{h}: the aux page stayed after leaving fullscreen")
+            middle = lua.table_from({"x": w // 2 - 1, "y": h // 2 - 1, "w": 2, "h": 2})
+            s = tap_on(wgt, middle)
+            for name in NAMES.values():
+                expect(s, name, "the named aux bars on the main screen")
+            expect(s, "READY", "a tap between the sticks keeps the main screen")
+            if wgt.vtx.ui != "main" or wgt.elrs.ui != "main":
+                problems.add(f"{w}x{h}: a tap between the sticks opened a menu")
 
         def check_status():
             # The bar: the date and the radio's battery, red at the radio's
-            # warning voltage; also on the compact aux page.
+            # warning voltage.
             fresh_radio(make_module())
             radio.tx_voltage = 7.9
             wgt = new_widget(w, h)
@@ -802,10 +813,6 @@ def main():
             if s.text_colors.get("6.5V") != red:
                 problems.add(f"{w}x{h}: a radio battery below the warning level isn't red")
             radio.tx_voltage = 7.9
-            if wgt.lay.compact:
-                run(wgt, w, h, fonts, frames=2, fullscreen=True)
-                s = tap_on(wgt, wgt.lay.mid)
-                expect(s, "Sat 7 Nov 2026", "the status bar on the aux page")
 
         def check_elrs_menu():
             module = make_module()
@@ -885,7 +892,7 @@ def main():
         guarded(f"{w}x{h} ELRS checks", check_elrs)
         guarded(f"{w}x{h} VTX checks", check_vtx)
         guarded(f"{w}x{h} FC checks", check_fc)
-        guarded(f"{w}x{h} page checks", check_pages)
+        guarded(f"{w}x{h} aux checks", check_aux)
         guarded(f"{w}x{h} ELRS menu checks", check_elrs_menu)
         guarded(f"{w}x{h} status bar checks", check_status)
         fresh_radio()

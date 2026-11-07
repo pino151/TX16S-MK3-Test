@@ -40,10 +40,12 @@ local DEFAULT_POWERS = { "-", "1", "2", "3", "4", "5", "6", "7", "8" }
 -- the VTX unchanged (vtx_msp.c), and the VTX maps it (hdzero-vtx firmware,
 -- msp_displayport.c, parse_vtx_params). A level past the VTX's own falls
 -- back to its minimum, 25mW. `real`: how many levels the VTX really has;
--- `off`: the level that turns the video off.
-local HDZERO_RACE = { real = 3, off = 3,  -- Race, Whoop, Nano: 25mW and 200mW
-  "25mW", "200mW", "0mW", "25mW", "25mW", "25mW", "25mW", "25mW" }
-local HDZERO_FREESTYLE = { real = 5, off = 5,  -- Freestyle V1/V2, up to 1W
+-- `off`: the level that turns the video off; `max`: the 1W level.
+-- On a Race VTX level 4 falls back to 25mW, but it's labelled 1W (in red)
+-- as a reminder of what it does on a Freestyle VTX.
+local HDZERO_RACE = { name = "HDZ", real = 3, off = 3, max = 4,  -- Race, Whoop, Nano
+  "25mW", "200mW", "0mW", "1W", "25mW", "25mW", "25mW", "25mW" }
+local HDZERO_FREESTYLE = { name = "HDZ FS", real = 5, off = 5, max = 4,  -- Freestyle V1/V2
   "25mW", "200mW", "500mW", "1W", "0mW", "25mW", "25mW", "25mW" }
 
 local SETTLE = 30          -- ticks after "Send VTx" before reading the module back

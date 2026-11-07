@@ -49,7 +49,7 @@ function M.auxList()
   local list = {}
   for i = 1, AUX_COUNT do
     local ch = FIRST_AUX + i - 1
-    list[i] = { ch = ch, name = "", num = tostring(ch + 1) }  -- num: for the mini bars
+    list[i] = { ch = ch, name = "" }
   end
   return list
 end
