@@ -121,31 +121,14 @@ local function auxGrid(x, y, w, h, pad, count)
   return g
 end
 
--- Compact layout (small screens): one numbered vertical bar per aux channel
--- for the main page, `thick` px wide and centred in its slot. Fills up from
--- the middle for +, down for -.
-local function miniBars(x, y, w, h, pad, labelH, count, thick)
-  local gap = max(2, pad)
-  local slot = floor((w - (count - 1) * gap) / count)
-  local barH = h - labelH - pad
-  local m = { bars = {}, labelY = y + barH + pad + floor(labelH / 2) }
-  local x0 = x + floor((w - (count * slot + (count - 1) * gap)) / 2)
-  for i = 1, count do
-    local sx = x0 + (i - 1) * (slot + gap)
-    m.bars[i] = { x = sx + floor((slot - thick) / 2), y = y, w = thick, h = barH,
-      cx = sx + floor(slot / 2) }
-  end
-  return m
-end
-
--- Screens shorter than this get the compact layout: the named aux bars move
--- to a page of their own so nothing has to shrink (the MK2's 480x272).
-local COMPACT_BELOW = 400
+-- Screens shorter than this (the MK2's 480x272) get a taller QUAD strip, so
+-- its values stay large and bold. Otherwise the layout is the same.
+local SMALL_BELOW = 400
 
 -- EdgeTX's App-mode menu button is drawn over the top-left corner until the
 -- widget goes fullscreen (a long press). The layout doesn't avoid it.
 function M.compute(w, h, auxCount)
-  local L = { w = w, h = h, compact = h < COMPACT_BELOW }
+  local L = { w = w, h = h }
   if w < 300 or h < 170 then
     L.tooSmall = true
     return L
@@ -172,7 +155,7 @@ function M.compute(w, h, auxCount)
     gap = pad,
   }
   local top = barH  -- everything else starts below the bar
-  local stripH = floor(h * (L.compact and 0.24 or 0.19))
+  local stripH = floor(h * (h < SMALL_BELOW and 0.24 or 0.19))
 
   -- Top band: ELRS on the left, VIDEO on the right.
   local videoW = floor(innerW * 0.34)
@@ -207,7 +190,6 @@ function M.compute(w, h, auxCount)
   -- radio itself.
   local midY = top + 2 * pad + topH
   local midH = h - top - topH - stripH - 4 * pad
-  L.mid = { x = 0, y = midY, w = w, h = midH }
   local s = min(midH - pad - labelH, floor(w * 0.21))
   local gy = midY + floor((midH - (s + pad + labelH)) / 2)
   L.left = gimbal(pad, gy, s, pad, labelH)
@@ -215,16 +197,7 @@ function M.compute(w, h, auxCount)
   -- An empty column either side of the aux area, so names and bars don't
   -- sit against the stick displays.
   local auxX = 2 * pad + s + floor(w * 0.03)
-  if L.compact then
-    -- Aux page: the named bars, full size. Main page: numbered mini bars,
-    -- as thin as the aux page's.
-    local auxY = top + 2 * pad + labelH
-    L.auxHeader = { x = pad, right = w - pad, y = top + pad }
-    L.aux = auxGrid(pad, auxY, w - 2 * pad, h - auxY - pad, pad, auxCount)
-    L.mini = miniBars(auxX, midY, w - 2 * auxX, midH, pad, labelH, auxCount, L.aux.barH)
-  else
-    L.aux = auxGrid(auxX, midY, w - 2 * auxX, midH, pad, auxCount)
-  end
+  L.aux = auxGrid(auxX, midY, w - 2 * auxX, midH, pad, auxCount)
   return L
 end
 

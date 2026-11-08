@@ -30,12 +30,28 @@ local function longest(list)
   return text
 end
 
+-- The power buttons' small texts: "keep", then the HDZero table's. Without
+-- "mW" if any one doesn't fit its button (the MK2), e.g. "200" not "200mW".
+local function subTexts(subs, maxW)
+  local texts, fits = { "keep" }, true
+  for i = 1, #subs do
+    texts[i + 1] = subs[i]
+    fits = fits and lcd.sizeText(subs[i], SMLSIZE) <= maxW
+  end
+  if not fits then
+    for i = 2, #texts do
+      texts[i] = string.gsub(texts[i], "mW$", "")
+    end
+  end
+  return texts
+end
+
 -- `fit(text, maxW, maxH)` returns the largest font that fits (layout.fit).
 -- `v` is the vtx.lua state: its bands and power labels set the button rows
 -- (they come from the FC's VTX table once it's read).
 function M.layout(w, h, fit, v, channelLabels)
   local pad = max(2, floor(h / 80))
-  local labelW = lcd.sizeText("POWER", SMLSIZE) + 2 * pad
+  local labelW = max(lcd.sizeText("POWER", SMLSIZE), lcd.sizeText("HDZ FS", SMLSIZE)) + 2 * pad
   local titleH = floor(h * 0.2)
   local rowH = floor((h - titleH - 6 * pad) / 4)  -- band, channel, power, buttons
   local P = {
@@ -48,18 +64,39 @@ function M.layout(w, h, fit, v, channelLabels)
   }
   local y = 2 * pad + titleH
   local rowLabels = { v.bandLabels, channelLabels, v.powerLabels }
-  local fontH
+  -- Power buttons with what each level means on HDZero: the number moves
+  -- up and the power goes underneath in small text.
+  local _, subH = lcd.sizeText("0", SMLSIZE)
+  local fontH, powerH
   for r = 1, 3 do
     local row = buttonRow(pad + labelW, y, w - 2 * pad - labelW, rowH, #rowLabels[r], pad)
     P.rows[r] = row
     P.labels[r] = { x = pad, y = y + floor(rowH / 2) }
+    local textH = rowH - pad
+    if r == 3 and v.powerSubs then
+      textH = rowH - subH - pad
+      local cy, subY = y + floor((rowH - subH) / 2), y + rowH - floor((subH + pad) / 2)
+      for i = 1, #row do
+        row[i].cy, row[i].subY = cy, subY
+      end
+      -- "POWER" in line with the numbers, the table's name under it.
+      P.labels[3] = { x = pad, y = cy, subY = subY }
+      P.subTexts = subTexts(v.powerSubs, (row[1] and row[1].w or 0) - 2)
+    end
     y = y + rowH + pad
-    -- One font for every button: the one that fits the tightest row.
-    local font = fit(longest(rowLabels[r]), (row[1] and row[1].w or rowH) - pad, rowH - pad)
+    -- One font for every button: the one that fits the tightest row. Power
+    -- buttons with text underneath have less room, so they may get a
+    -- smaller one rather than shrinking every row.
+    local font = fit(longest(rowLabels[r]), (row[1] and row[1].w or rowH) - pad, textH)
     local _, fh = lcd.sizeText("8", font)
-    if not fontH or fh < fontH then
+    if textH < rowH - pad then
+      P.powerFont, powerH = font, fh
+    elseif not fontH or fh < fontH then
       P.buttonFont, fontH = font, fh
     end
+  end
+  if not P.powerFont or powerH > fontH then
+    P.powerFont = P.buttonFont
   end
   local half = floor((w - 3 * pad) / 2)
   P.cancel = { x = pad, y = y, w = half, h = rowH }
@@ -71,8 +108,9 @@ function M.layout(w, h, fit, v, channelLabels)
 end
 
 -- `selected` fills the button; `disabled` (a channel the FC's VTX table
--- doesn't have) draws it as an outline with dim text.
-local function button(r, text, font, selected, c, disabled)
+-- doesn't have) draws it as an outline with dim text. `sub` is small text
+-- under the main text, at the layout's r.subY (power buttons only).
+local function button(r, text, font, selected, c, disabled, sub, subColor)
   local color = c.fg
   if disabled then
     drawRect(r.x, r.y, r.w, r.h, c.line)
@@ -84,7 +122,28 @@ local function button(r, text, font, selected, c, disabled)
     fillRect(r.x, r.y, r.w, r.h, c.panel)
     drawRect(r.x, r.y, r.w, r.h, c.line)
   end
-  drawText(r.x + floor(r.w / 2), r.y + floor(r.h / 2), text, font + CENTER + VCENTER + color)
+  local x = r.x + floor(r.w / 2)
+  drawText(x, r.cy or r.y + floor(r.h / 2), text, font + CENTER + VCENTER + color)
+  if sub then
+    drawText(x, r.subY, sub, SMLSIZE + CENTER + VCENTER + (selected and color or subColor))
+  end
+end
+
+-- The colour of the small text under power button i: grey "keep" for "-",
+-- the video-off level in amber, the 1W level in red, levels the VTX doesn't
+-- have (they fall back to its minimum) dimmed.
+local function subColor(subs, i, c)
+  local level = i - 1
+  if level == 0 then
+    return c.label
+  elseif level == subs.off then
+    return c.levels[2]
+  elseif level == subs.max then
+    return c.levels[3]
+  elseif level > subs.real then
+    return c.line
+  end
+  return c.fg
 end
 M.button = button  -- elrsmenu.lua uses it too
 
@@ -98,6 +157,9 @@ function M.draw(P, v, vtx, c)
   for r = 1, 3 do
     drawText(P.labels[r].x, P.labels[r].y, ROW_LABELS[r], SMLSIZE + VCENTER + c.label)
   end
+  if v.powerSubs then
+    drawText(P.labels[3].x, P.labels[3].subY, v.powerSubs.name, SMLSIZE + VCENTER + c.label)
+  end
   local bands, chans, powers = P.rows[1], P.rows[2], P.rows[3]
   for i = 1, #bands do
     button(bands[i], v.bandLabels[i], P.buttonFont, v.bands[i] == s.band, c)
@@ -105,8 +167,13 @@ function M.draw(P, v, vtx, c)
   for i = 1, #chans do
     button(chans[i], vtx.CHANNEL_LABELS[i], P.buttonFont, i == s.ch, c, not v.chanOk[i])
   end
+  local subs = v.powerSubs
   for i = 1, #powers do
-    button(powers[i], v.powerLabels[i], P.buttonFont, i - 1 == s.pwr, c)
+    local sub, color
+    if subs then
+      sub, color = P.subTexts[i], subColor(subs, i, c)
+    end
+    button(powers[i], v.powerLabels[i], P.powerFont, i - 1 == s.pwr, c, false, sub, color)
   end
   button(P.cancel, "CANCEL", P.actionFont, false, c)
   button(P.ok, "SEND", P.actionFont, true, c)

@@ -28,12 +28,14 @@ local options = {
   { "Light", BOOL, 0 },             -- 1 = light background, for strong sun
   { "StickMode", VALUE, 0, 0, 4 },  -- 0 = use the radio's stick mode
   { "Cells", VALUE, 0, 0, 14 },     -- 0 = work out the quad's cell count
+  { "Freestyle", BOOL, 0 },         -- VTX picker power labels: 0 = HDZero Race/Whoop, 1 = Freestyle
 }
 
 local function applyOptions(wgt, opts)
   wgt.options = opts
   wgt.colors = mods.draw.palette(opts.Light == 1)
   wgt.sticks = mods.chans.stickMap(opts.StickMode)
+  mods.vtx.setFreestyle(wgt.vtx, opts.Freestyle == 1)
 end
 
 local function create(zone, opts)
@@ -42,7 +44,6 @@ local function create(zone, opts)
     zone = zone,
     aux = m.chans.auxList(),
     namesStale = true,
-    page = "main",  -- compact layout only: "main" or "aux"
     telem = m.telem.new(),
     elrs = m.elrs.new(m.crsf),
     msp = m.msp.new(),
@@ -123,8 +124,7 @@ end
 -- Events only arrive in fullscreen (long-press the widget to get there).
 -- Main screen: a tap on the VIDEO panel opens the VTX picker, a tap on the
 -- ELRS panel the ELRS menu (or, with no settings to show, reads them
--- again), and ENTER reads the ELRS settings again. In the compact layout a
--- tap on the middle band shows the aux page, and any tap there comes back.
+-- again), and ENTER reads the ELRS settings again.
 -- Picker and menu: taps choose and send; EXIT closes them.
 local function onEvent(wgt, event, touchState)
   local m, v, e = mods, wgt.vtx, wgt.elrs
@@ -149,16 +149,12 @@ local function onEvent(wgt, event, touchState)
     end
   elseif tap then
     local lay, x, y = wgt.lay, touchState.x, touchState.y
-    if lay.compact and wgt.page == "aux" then
-      wgt.page = "main"
-    elseif inside(lay.video, x, y) then
+    if inside(lay.video, x, y) then
       m.vtx.open(v, e.link.fields)
     elseif inside(lay.elrs, x, y) then
       if not m.elrs.open(e) then
         m.elrs.refresh(e)
       end
-    elseif lay.compact and inside(lay.mid, x, y) then
-      wgt.page = "aux"
     end
   elseif event == EVT_VIRTUAL_ENTER then
     m.elrs.refresh(wgt.elrs)
@@ -170,10 +166,9 @@ local function refresh(wgt, event, touchState)
   updateData(wgt)
   mainLayout(wgt)
   if event == nil then
-    -- Not fullscreen (any more): no taps, so back to the main page.
+    -- Not fullscreen (any more): no taps, so close the picker and menu.
     m.vtx.close(v)
     m.elrs.close(e)
-    wgt.page = "main"
   elseif event ~= 0 then
     onEvent(wgt, event, touchState)
   end
