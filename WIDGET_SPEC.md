@@ -304,6 +304,36 @@ Protocol (same in 3.x and 4.x):
 7. Optional: keep the ELRS Lua in `SCRIPTS/TOOLS/` to cross-check what the widget reads. If the
    Betaflight TX Lua's VTX page can read the quad, the MSP read-back will work too.
 
+## TX12 and Pocket version (128x64, black and white)
+The RadioMaster Pocket uses this version as it is: EdgeTX gives it the same 128x64 screen and
+the same keys as the TX12 (`radio/src/boards/hw_defs/pocket.json`).
+
+A separate script with its own code, because nothing of the widget carries over: the TX12 has
+no widgets, no touch, no colour, a different `lcd` API and far less memory (the widget's
+protocol modules alone need about 110 KB of Lua memory on a PC).
+- **Files:** `SCRIPTS/TELEMETRY/PreRac.lua` (the screen EdgeTX loads) and `SCRIPTS/PRERACE/`
+  (`link.lua` ELRS/FC, `view.lua` main screen, `menu.lua` both menus, loaded only while open).
+- **Container:** a telemetry screen (Model > Display > Script). TELE on the main view shows
+  it, PAGE keys switch telemetry screens, holding RTN leaves. Holding ENTER is EdgeTX's
+  "reset telemetry" popup, so it isn't used.
+- **Layout,** as on the MK3: date and radio battery; ELRS (rate, power, telemetry ratio,
+  dynamic power) left and VIDEO (channel, frequency, HDZero power label) right; sticks and
+  the six named aux bars; LINK / PACK / FC along the bottom.
+- **No colour:** a warning is inverted, a bad value inverted and blinking. A tick beside the
+  frequency means the FC reports VTX Admin's channel; otherwise "FCR5", "PIT" or "NOVTX".
+- **Controls:** scroll moves the bar under VIDEO or ELRS, ENTER opens that menu. In a menu,
+  scroll moves between rows, ENTER edits a row (scroll changes it, ENTER keeps it and jumps
+  to the button), RTN cancels. The VTX menu opens already editing the channel, so a channel
+  change is ENTER, scroll, ENTER, ENTER. Nothing is sent before SEND / APPLY.
+- **Left out** to save memory: the FC's VTX table (bands and power labels are ELRS's own, which
+  match HDZero's), the Freestyle power table, light theme, stick values as numbers.
+- **Firmware:** written for Lua 5.2 and 5.3 and only long-standing API calls, so it should run
+  on an original TX12 (EdgeTX 2.10 or older) as well as a TX12 MK2. Not yet run on a radio;
+  memory use there is unmeasured (about 52 KB on a 64-bit PC, roughly half expected on the
+  radio; SYS > Statistics > Debug shows free memory).
+- **Preview:** `python3 utils/preview_tx12.py` (`utils/bwlcd.py` is the 128x64 LCD and fonts,
+  ported from the EdgeTX source).
+
 ## Build order
 1. Static layout, plus live sticks and aux bars with output names. *(Done: `WIDGETS/PreRace/`.
    The MK2 uses the same layout; see "Touch and screen size".)*

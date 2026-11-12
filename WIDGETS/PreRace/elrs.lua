@@ -103,7 +103,7 @@ local function formatPower(c, power, dynamic)
   local unit = power.unit or ""
   local mw = tonumber(t)
   if mw then
-    set(c, mw >= 1000 and ((mw / 1000) .. "W") or (t .. unit), dyn)
+    set(c, mw >= 1000 and string.format("%gW", mw / 1000) or (t .. unit), dyn)
   else
     -- EU LR1121 builds list two powers, e.g. "25/250": the unit goes beside the label.
     set(c, t, dyn == "" and unit or (unit .. " " .. dyn))
