@@ -1,4 +1,4 @@
--- Pre-race check screen for 128x64 radios (RadioMaster TX12).
+-- Pre-race check screen for 128x64 radios (RadioMaster TX12 and Pocket).
 -- The black-and-white sibling of WIDGETS/PreRace: see WIDGET_SPEC.md.
 -- Set it up in Model > Display as a Script screen, then press TELE on the
 -- main view. Scroll picks VIDEO or ELRS (marked by the bar under it), ENTER

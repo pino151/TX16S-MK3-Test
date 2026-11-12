@@ -11,6 +11,9 @@
 - Third radio: RadioMaster TX12 (128x64 black-and-white LCD, no touch; scroll wheel, ENTER, RTN).
   It has no widgets, so it gets its own telemetry-screen script with its own code (see below).
   EdgeTX 2.11+ only releases firmware for the TX12 MK2; an original TX12 is on 2.10 or older.
+- Fourth radio: RadioMaster Pocket. To EdgeTX it is the same as the TX12: 128x64 1-bit LCD, the
+  same keys (scroll wheel, ENTER, RTN, PAGE, TELE, SYS, MDL), STM32F407, internal ELRS. It runs
+  the TX12 script unchanged; only the glass is physically smaller.
 
 ## Rules for Lua scripts
 - The runtime is EdgeTX Lua: **Lua 5.3 from EdgeTX 2.11** (32-bit integers and floats, with

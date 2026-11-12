@@ -304,7 +304,10 @@ Protocol (same in 3.x and 4.x):
 7. Optional: keep the ELRS Lua in `SCRIPTS/TOOLS/` to cross-check what the widget reads. If the
    Betaflight TX Lua's VTX page can read the quad, the MSP read-back will work too.
 
-## TX12 version (128x64, black and white)
+## TX12 and Pocket version (128x64, black and white)
+The RadioMaster Pocket uses this version as it is: EdgeTX gives it the same 128x64 screen and
+the same keys as the TX12 (`radio/src/boards/hw_defs/pocket.json`).
+
 A separate script with its own code, because nothing of the widget carries over: the TX12 has
 no widgets, no touch, no colour, a different `lcd` API and far less memory (the widget's
 protocol modules alone need about 110 KB of Lua memory on a PC).
