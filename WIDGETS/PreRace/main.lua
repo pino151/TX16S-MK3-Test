@@ -29,11 +29,15 @@ local options = {
   { "StickMode", VALUE, 0, 0, 4 },  -- 0 = use the radio's stick mode
   { "Cells", VALUE, 0, 0, 14 },     -- 0 = work out the quad's cell count
   { "Freestyle", BOOL, 0 },         -- VTX picker power labels: 0 = HDZero Race/Whoop, 1 = Freestyle
+  { "ThemeBg", BOOL, 0 },           -- 1 = no black/white fill: the radio's own background shows
 }
 
 local function applyOptions(wgt, opts)
   wgt.options = opts
   wgt.colors = mods.draw.palette(opts.Light == 1)
+  -- The main screen then draws no background and no panel fills. The VTX
+  -- picker and the ELRS menu keep theirs, so their buttons stay readable.
+  wgt.colors.clear = opts.ThemeBg == 1
   wgt.sticks = mods.chans.stickMap(opts.StickMode)
   mods.vtx.setFreestyle(wgt.vtx, opts.Freestyle == 1)
 end

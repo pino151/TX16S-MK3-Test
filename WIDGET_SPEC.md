@@ -130,6 +130,10 @@ Touch and screen size:
 
 Widget options (max 5):
 - `Light`: light background instead of black, for strong sun.
+- `ThemeBg`: draw no background at all on the main screen (no black/white fill, no panel
+  fills), so the radio's own main-view background shows through. `Light` then only picks the
+  text colour: off = white text (dark backgrounds), on = black text (light ones). The VTX
+  picker and ELRS menu keep their solid background.
 - `StickMode`: 0 = use the radio's stick mode (needs EdgeTX 2.12+, otherwise mode 2), 1–4 to force one.
 - `Cells`: 0 = work out the quad's cell count from the voltage, 1–14 to force one.
 - `Freestyle`: 0 = the VTX picker's power labels follow HDZero Race/Whoop/Nano VTXs, 1 = HDZero

@@ -63,7 +63,9 @@ end
 -- `B` is the layout's bar (layout.lua). The battery turns red at the
 -- radio's warning voltage.
 function M.draw(B, st, c)
-  fillRect(0, 0, B.w, B.h, c.panel)
+  if not c.clear then
+    fillRect(0, 0, B.w, B.h, c.panel)
+  end
   drawText(B.x, B.cy, st.dateText, SMLSIZE + VCENTER + c.fg)
   local color = st.warning and c.levels[3] or c.fg
   drawText(B.right, B.cy, st.battText, SMLSIZE + VCENTER + RIGHT + color)

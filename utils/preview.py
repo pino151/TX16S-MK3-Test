@@ -472,9 +472,10 @@ def main():
     step = 5  # ticks per frame: EdgeTX calls refresh() about every 50 ms
     tap = CONSTANTS["EVT_TOUCH_TAP"]
 
-    def new_widget(w, h, light=False):
+    def new_widget(w, h, light=False, theme_bg=False):
         opts = default_options(widget)
         opts["Light"] = 1 if light else 0
+        opts["ThemeBg"] = 1 if theme_bg else 0
         zone = lua.table_from({"x": 0, "y": 0, "w": w, "h": h, "xabs": 0, "yabs": 0})
         return widget.create(zone, opts)
 
@@ -796,6 +797,28 @@ def main():
             if wgt.vtx.ui != "main" or wgt.elrs.ui != "main":
                 problems.add(f"{w}x{h}: a tap between the sticks opened a menu")
 
+        def check_theme_bg():
+            # ThemeBg: the main screen fills nothing big, so the radio's
+            # background (magenta here) shows; text colour follows Light.
+            for light in (False, True):
+                fresh_radio(make_module())
+                wgt = new_widget(w, h, light, theme_bg=True)
+                s = run(wgt, w, h, fonts, frames=80, outputs=OUT_MOVING, telemetry=dict(TLM_GOOD))
+                bare = dict((c, n) for n, c in s.img.getcolors(w * h)).get((255, 0, 255), 0)
+                if bare < 0.7 * w * h:
+                    problems.add(f"{w}x{h}: ThemeBg still covers the background "
+                                 f"({100 * bare // (w * h)}% shows)")
+                want = flag_rgb(int(wgt.colors.fg))
+                if s.text_colors.get("ARM") != want or want != ((0, 0, 0) if light else (255, 255, 255)):
+                    problems.add(f"{w}x{h}: ThemeBg text colour doesn't follow Light")
+                save(s, "themebg-light" if light else "themebg")
+                # The menus keep a solid background.
+                run(wgt, w, h, fonts, frames=2, outputs=radio.outputs, telemetry=radio.telemetry,
+                    event=0, fullscreen=True)
+                s = tap_on(wgt, wgt.lay.video)
+                if s.img.getpixel((2, 2)) == (255, 0, 255):
+                    problems.add(f"{w}x{h}: the VTX picker lost its background with ThemeBg")
+
         def check_status():
             # The bar: the date and the radio's battery, red at the radio's
             # warning voltage.
@@ -895,6 +918,7 @@ def main():
         guarded(f"{w}x{h} aux checks", check_aux)
         guarded(f"{w}x{h} ELRS menu checks", check_elrs_menu)
         guarded(f"{w}x{h} status bar checks", check_status)
+        guarded(f"{w}x{h} theme background checks", check_theme_bg)
         fresh_radio()
 
     for name in lua.globals().GLOBAL_WRITES.values():

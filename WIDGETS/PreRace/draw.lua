@@ -60,7 +60,9 @@ local function clamp(v)
 end
 
 local function frame(p, c)
-  fillRect(p.x, p.y, p.w, p.h, c.panel)
+  if not c.clear then
+    fillRect(p.x, p.y, p.w, p.h, c.panel)
+  end
   drawRect(p.x, p.y, p.w, p.h, c.line)
 end
 
@@ -171,7 +173,9 @@ end
 
 function M.screen(wgt)
   local L, c = wgt.lay, wgt.colors
-  fillRect(0, 0, L.w, L.h, c.bg)
+  if not c.clear then
+    fillRect(0, 0, L.w, L.h, c.bg)
+  end
   if L.tooSmall then
     local x, y = floor(L.w / 2), floor(L.h / 2)
     local _, lineH = lcd.sizeText("A", SMLSIZE)
