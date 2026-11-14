@@ -61,10 +61,14 @@ function M.update(st)
 end
 
 -- `B` is the layout's bar (layout.lua). The battery turns red at the
--- radio's warning voltage.
-function M.draw(B, st, c)
+-- radio's warning voltage. `note`, if given, shows in the middle in amber
+-- (the background image that didn't load).
+function M.draw(B, st, c, note)
   if not c.clear then
     fillRect(0, 0, B.w, B.h, c.panel)
+  end
+  if note then
+    drawText(floor(B.w / 2), B.cy, note, SMLSIZE + CENTER + VCENTER + c.levels[2])
   end
   drawText(B.x, B.cy, st.dateText, SMLSIZE + VCENTER + c.fg)
   local color = st.warning and c.levels[3] or c.fg

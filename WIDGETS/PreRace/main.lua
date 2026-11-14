@@ -12,7 +12,7 @@ local DIR = "/WIDGETS/PreRace/"
 -- unless it is actually placed on a screen.
 local mods
 local MODULES = { "chans", "layout", "draw", "telem", "crsf", "elrs", "msp", "vtx", "picker",
-  "elrsmenu", "status" }
+  "elrsmenu", "status", "bg" }
 
 local function loadModules()
   if not mods then
@@ -24,22 +24,31 @@ local function loadModules()
   return mods
 end
 
+-- EdgeTX keeps option values by position, and resets one whose type
+-- changes. BgImage took over the old Freestyle slot (4), so ThemeBg (5)
+-- keeps its value across the update.
 local options = {
   { "Light", BOOL, 0 },             -- 1 = light background, for strong sun
   { "StickMode", VALUE, 0, 0, 4 },  -- 0 = use the radio's stick mode
   { "Cells", VALUE, 0, 0, 14 },     -- 0 = work out the quad's cell count
-  { "Freestyle", BOOL, 0 },         -- VTX picker power labels: 0 = HDZero Race/Whoop, 1 = Freestyle
+  { "BgImage", FILE, "", "/IMAGES" },  -- a background image from /IMAGES (bg.lua)
   { "ThemeBg", BOOL, 0 },           -- 1 = no black/white fill: the radio's own background shows
 }
 
 local function applyOptions(wgt, opts)
   wgt.options = opts
   wgt.colors = mods.draw.palette(opts.Light == 1)
-  -- The main screen then draws no background and no panel fills. The VTX
-  -- picker and the ELRS menu keep theirs, so their buttons stay readable.
-  wgt.colors.clear = opts.ThemeBg == 1
+  -- ThemeBg: the main screen draws no background and no panel fills. The
+  -- VTX picker and the ELRS menu keep theirs, so their buttons stay readable.
+  -- A background image does the same while it shows (refresh()).
+  wgt.themeBg = opts.ThemeBg == 1
+  local name = opts.BgImage or ""
+  if not wgt.bg or wgt.bg.name ~= name then
+    wgt.bg = nil
+    collectgarbage()  -- free the old image before the new one loads
+    wgt.bg = mods.bg.new(name)
+  end
   wgt.sticks = mods.chans.stickMap(opts.StickMode)
-  mods.vtx.setFreestyle(wgt.vtx, opts.Freestyle == 1)
 end
 
 local function create(zone, opts)
@@ -181,11 +190,15 @@ local function refresh(wgt, event, touchState)
   elseif e.ui ~= "main" then
     m.elrsmenu.draw(menuLayout(wgt), e, wgt.colors, m.picker.button)
   else
-    local lay = wgt.lay
+    local lay, c, bg = wgt.lay, wgt.colors, wgt.bg
+    c.clear = wgt.themeBg
+    if not lay.tooSmall and m.bg.draw(bg, lay.w, lay.h) then
+      c.clear = true
+    end
     m.draw.screen(wgt)
     if lay.bar then
       m.status.update(wgt.status)
-      m.status.draw(lay.bar, wgt.status, wgt.colors)
+      m.status.draw(lay.bar, wgt.status, c, bg.failed and "IMAGE NOT LOADED")
     end
   end
 end

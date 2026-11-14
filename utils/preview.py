@@ -35,6 +35,7 @@ Exits with status 1 if any problem was found.
 import argparse
 import sys
 import urllib.request
+import weakref
 from pathlib import Path
 
 try:
@@ -103,7 +104,7 @@ CONSTANTS = {
     "SOLID": SOLID, "DOTTED": DOTTED,
     # Widget option types (values only need to be distinct here).
     "VALUE": 1, "SOURCE": 2, "COLOR": 3, "BOOL": 4, "STRING": 5, "TIMER": 6,
-    "TEXT_SIZE": 7, "ALIGNMENT": 8, "SWITCH": 9, "SLIDER": 10, "CHOICE": 11,
+    "TEXT_SIZE": 7, "ALIGNMENT": 8, "SWITCH": 9, "SLIDER": 10, "CHOICE": 11, "FILE": 12,
     # Events (values only need to be distinct here).
     "EVT_TOUCH_FIRST": 0x8001, "EVT_TOUCH_TAP": 0x8002, "EVT_TOUCH_BREAK": 0x8003,
     "EVT_TOUCH_SLIDE": 0x8004, "EVT_VIRTUAL_ENTER": 0x8005, "EVT_VIRTUAL_EXIT": 0x8006,
@@ -210,6 +211,7 @@ class Screen:
         self.problems = problems
         self.texts = []
         self.text_colors = {}      # text -> (r, g, b) it was last drawn in
+        self.bitmaps = []          # (x, y, w, h) of each bitmap drawn
         self.text_boxes = []
 
     def check(self, what, x0, y0, x1, y1):
@@ -286,6 +288,41 @@ class Screen:
         self.check("filled circle", x - r, y - r, x + r + 1, y + r + 1)
         self.d.ellipse([x - r, y - r, x + r, y + r], fill=flag_rgb(flags or 0))
 
+    def drawBitmap(self, bmp, x, y, scale=None):
+        """EdgeTX clips a bitmap at the zone's edges, so only a fraction is
+        a problem (an error on Lua 5.3)."""
+        if float(x) != int(x) or float(y) != int(y):
+            self.problems.add(f"lcd.drawBitmap at ({x}, {y}): EdgeTX needs whole numbers")
+        if scale is not None:
+            self.problems.add("lcd.drawBitmap with a scale: scaled every frame, slow")
+        if bmp.img is not None:
+            self.img.paste(bmp.img.convert("RGB"), (int(x), int(y)))
+            self.bitmaps.append((int(x), int(y), *bmp.img.size))
+
+
+class Bitmap:
+    """A Lua bitmap. As in EdgeTX (api_colorlcd.cpp), opening or resizing
+    fails, giving an empty bitmap, once Lua bitmaps already use more than
+    2 MB (LUA_MEM_EXTRA_MAX); each takes 2 bytes per pixel."""
+
+    MEM_MAX = 2 * 1024 * 1024
+    used = 0
+    live = 0
+
+    def __init__(self, img):
+        self.img = None
+        if img is not None and Bitmap.used <= Bitmap.MEM_MAX:
+            self.img = img
+            size = img.size[0] * img.size[1] * 2
+            Bitmap.used += size
+            Bitmap.live += 1
+            weakref.finalize(self, Bitmap.free, size)
+
+    @staticmethod
+    def free(size):
+        Bitmap.used -= size
+        Bitmap.live -= 1
+
 
 class Radio:
     """Mock EdgeTX runtime: lcd.*, model.*, outputs, stick settings, CRSF
@@ -311,11 +348,14 @@ class Radio:
         for name, rgb in COLORS.items():
             g[name] = rgb_flag(*rgb)
         draw = ["drawText", "sizeText", "drawFilledRectangle", "drawRectangle",
-                "drawLine", "drawCircle", "drawFilledCircle"]
+                "drawLine", "drawCircle", "drawFilledCircle", "drawBitmap"]
         lcd = {n: (lambda n: lambda *a: getattr(self.screen, n)(*a))(n) for n in draw}
         lcd["RGB"] = self.rgb
         lcd["exitFullScreen"] = lambda: None
         g.lcd = lua.table_from(lcd)
+        self.images = {}           # SD card path -> PIL image, or bytes (not an image)
+        g.Bitmap = lua.table_from({"open": self.bitmap_open, "getSize": self.bitmap_size,
+                                   "resize": self.bitmap_resize})
         g.model = lua.table_from({"getOutput": self.get_output})
         g.getOutputValue = lambda i: int(self.outputs.get(int(i), 0))
         g.defaultChannel = lambda stick: AETR.index(int(stick)) if int(stick) in AETR else None
@@ -416,6 +456,20 @@ class Radio:
             r, g, b = (int(r) >> 16) & 0xFF, (int(r) >> 8) & 0xFF, int(r) & 0xFF
         return rgb_flag(r, g, b)
 
+    def bitmap_open(self, path):
+        img = self.images.get(str(path))
+        return Bitmap(img if not isinstance(img, (bytes, type(None))) else None)
+
+    def bitmap_size(self, bmp):
+        return bmp.img.size if bmp.img is not None else (0, 0)
+
+    def bitmap_resize(self, bmp, w, h):
+        if bmp is None or bmp.img is None:
+            return None
+        if float(w) != int(w) or float(h) != int(h):
+            self.problems.add(f"Bitmap.resize to {w}x{h}: EdgeTX needs whole numbers")
+        return Bitmap(bmp.img.resize((int(w), int(h))))
+
     def get_output(self, i):
         return self.lua.table_from({"name": self.names.get(int(i), "")})
 
@@ -472,10 +526,11 @@ def main():
     step = 5  # ticks per frame: EdgeTX calls refresh() about every 50 ms
     tap = CONSTANTS["EVT_TOUCH_TAP"]
 
-    def new_widget(w, h, light=False, theme_bg=False):
+    def new_widget(w, h, light=False, theme_bg=False, bg_image=""):
         opts = default_options(widget)
         opts["Light"] = 1 if light else 0
         opts["ThemeBg"] = 1 if theme_bg else 0
+        opts["BgImage"] = bg_image
         zone = lua.table_from({"x": 0, "y": 0, "w": w, "h": h, "xabs": 0, "yabs": 0})
         return widget.create(zone, opts)
 
@@ -635,7 +690,7 @@ def main():
             for text in ("keep", "25" + mw, "200" + mw, "0" + mw, "1W", "HDZ"):
                 expect(s, text, "HDZero Race power labels under the numbers")
             if "500" + mw in s.texts:
-                problems.add(f"{w}x{h}: Freestyle power labels without the Freestyle option")
+                problems.add(f"{w}x{h}: HDZero Freestyle power labels in the picker")
             amber = flag_rgb(int(wgt.colors.levels[2]))
             red = flag_rgb(int(wgt.colors.levels[3]))
             if s.text_colors.get("0" + mw) != amber:
@@ -648,14 +703,6 @@ def main():
                 lb, bb = boxes.get(label), boxes.get(beside)
                 if lb and bb and abs((lb[1] + lb[3]) - (bb[1] + bb[3])) > 2:
                     problems.add(f"{w}x{h}: {label!r} isn't level with {beside!r}")
-            # The Freestyle option switches to HDZero Freestyle's table.
-            opts = default_options(widget)
-            opts["Freestyle"] = 1
-            widget.update(wgt, opts)
-            s = run(wgt, w, h, fonts, frames=2, event=0, fullscreen=True)
-            for text in ("500" + mw, "1W", "0" + mw, "HDZ FS"):
-                expect(s, text, "HDZero Freestyle power labels with the Freestyle option")
-            save(s, "picker-freestyle")
             # Each power label fits inside its button (tightest on the MK2).
             powers = lua_list(wgt.pick.rows[3])
             for i, r in enumerate(powers):
@@ -664,8 +711,6 @@ def main():
                 if tw > r.w - 2:
                     problems.add(f"{w}x{h}: power label {text!r} ({tw}px) doesn't fit its "
                                  f"{r.w}px button")
-            opts["Freestyle"] = 0
-            widget.update(wgt, opts)
             tap_on(wgt, wgt.pick.cancel)
             if module.writes or wgt.vtx.ui != "main":
                 problems.add(f"{w}x{h}: CANCEL in the VTX picker didn't just close it")
@@ -797,6 +842,69 @@ def main():
             if wgt.vtx.ui != "main" or wgt.elrs.ui != "main":
                 problems.add(f"{w}x{h}: a tap between the sticks opened a menu")
 
+        def check_bg_image():
+            # Test images on the SD card: one the screen's size, a 4:3 photo,
+            # one too big for the 2 MB Lua bitmaps may use, and a text file.
+            def gradient(iw, ih):
+                img = Image.new("RGB", (iw, ih))
+                img.putdata([(40 + 120 * x // iw, 60, 90 + 100 * y // ih)
+                             for y in range(ih) for x in range(iw)])
+                return img
+            radio.images = {"/IMAGES/exact.png": gradient(w, h),
+                            "/IMAGES/photo.jpg": gradient(1024, 768),
+                            "/IMAGES/huge.png": gradient(1920, 1080),
+                            "/IMAGES/notes.txt": b"not an image"}
+            magenta = (255, 0, 255)
+
+            def bare(screen):
+                return dict((c, n) for n, c in screen.img.getcolors(w * h)).get(magenta, 0)
+
+            # Exactly the screen's size: drawn as it is, nothing else kept.
+            fresh_radio(make_module(), make_fc())
+            wgt = new_widget(w, h, bg_image="exact.png")
+            s = run(wgt, w, h, fonts, frames=80, outputs=OUT_MOVING, telemetry=dict(TLM_GOOD))
+            if s.bitmaps != [(0, 0, w, h)]:
+                problems.add(f"{w}x{h}: a screen-sized image drawn as {s.bitmaps}")
+            if bare(s) or s.img.getpixel((w // 2, h - 3)) == (0, 0, 0):
+                problems.add(f"{w}x{h}: the background image doesn't show through")
+            expect(s, "ARM", "names over a background image")
+            if "IMAGE NOT LOADED" in s.texts:
+                problems.add(f"{w}x{h}: a good image reported as not loaded")
+            save(s, "bgimage")
+            # A different shape: covers the screen, keeps its shape, and the
+            # full-size image is dropped once the fitted copy is made.
+            opts = default_options(widget)
+            opts["BgImage"] = "photo.jpg"
+            widget.update(wgt, opts)
+            s = run(wgt, w, h, fonts, frames=4)
+            lua.execute("collectgarbage()")
+            (x, y, bw, bh), = s.bitmaps or [(0, 0, 0, 0)]
+            if x > 0 or y > 0 or x + bw < w or y + bh < h:
+                problems.add(f"{w}x{h}: a 4:3 image doesn't cover the screen ({s.bitmaps})")
+            if abs(bw * 3 - bh * 4) > 4:
+                problems.add(f"{w}x{h}: a 4:3 image drawn {bw}x{bh}: stretched")
+            if Bitmap.live != 1:
+                problems.add(f"{w}x{h}: {Bitmap.live} Lua bitmaps kept, expected the fitted one")
+            save(s, "bgimage-photo")
+            # Not an image, or too big: the usual background, and a note.
+            for name in ("notes.txt", "huge.png"):
+                opts["BgImage"] = name
+                widget.update(wgt, opts)
+                s = run(wgt, w, h, fonts, frames=4)
+                expect(s, "IMAGE NOT LOADED", f"{name} as the background image")
+                if s.text_colors.get("IMAGE NOT LOADED") != flag_rgb(int(wgt.colors.levels[2])):
+                    problems.add(f"{w}x{h}: the image note isn't amber")
+                if bare(s):
+                    problems.add(f"{w}x{h}: no background after {name} didn't load")
+            save(s, "bgimage-failed")
+            # Back to none: no bitmap left in memory.
+            opts["BgImage"] = ""
+            widget.update(wgt, opts)
+            s = run(wgt, w, h, fonts, frames=4)
+            lua.execute("collectgarbage()")
+            if Bitmap.live or s.bitmaps or "IMAGE NOT LOADED" in s.texts:
+                problems.add(f"{w}x{h}: the image stays after BgImage is cleared")
+
         def check_theme_bg():
             # ThemeBg: the main screen fills nothing big, so the radio's
             # background (magenta here) shows; text colour follows Light.
@@ -919,6 +1027,7 @@ def main():
         guarded(f"{w}x{h} ELRS menu checks", check_elrs_menu)
         guarded(f"{w}x{h} status bar checks", check_status)
         guarded(f"{w}x{h} theme background checks", check_theme_bg)
+        guarded(f"{w}x{h} background image checks", check_bg_image)
         fresh_radio()
 
     for name in lua.globals().GLOBAL_WRITES.values():

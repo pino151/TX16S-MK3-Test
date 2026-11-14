@@ -51,7 +51,7 @@ end
 -- (they come from the FC's VTX table once it's read).
 function M.layout(w, h, fit, v, channelLabels)
   local pad = max(2, floor(h / 80))
-  local labelW = max(lcd.sizeText("POWER", SMLSIZE), lcd.sizeText("HDZ FS", SMLSIZE)) + 2 * pad
+  local labelW = lcd.sizeText("POWER", SMLSIZE) + 2 * pad
   local titleH = floor(h * 0.2)
   local rowH = floor((h - titleH - 6 * pad) / 4)  -- band, channel, power, buttons
   local P = {
