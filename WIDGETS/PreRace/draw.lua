@@ -16,7 +16,7 @@ local fillCircle = lcd.drawFilledCircle
 -- `levels` are indexed by the status levels in telem.lua (NONE, OK, WARN,
 -- BAD), plus 4 for a value that's on its way (vtx.lua's PENDING).
 -- Over a background image (`clear`) the labels and lines get more contrast:
--- they sit on the see-through backdrop instead of a solid panel.
+-- they sit on the dimmed image instead of a solid panel.
 function M.palette(light)
   if light then
     local amber = lcd.RGB(200, 115, 0)
@@ -65,19 +65,10 @@ local function clamp(v)
   return v
 end
 
--- A see-through backdrop in the background colour, over an image. `c.dim`
--- is EdgeTX's transparency: 0 solid, 15 none.
-local function backdrop(r, c)
-  if c.dim < 15 then
-    fillRect(r.x, r.y, r.w, r.h, c.bg, c.dim)
-  end
-end
-M.backdrop = backdrop  -- status.lua uses it too
-
+-- Over a background (`clear`) a box is only its outline: the whole
+-- background is dimmed instead (M.screen).
 local function frame(p, c)
-  if c.clear then
-    backdrop(p, c)
-  else
+  if not c.clear then
     fillRect(p.x, p.y, p.w, p.h, c.panel)
   end
   drawRect(p.x, p.y, p.w, p.h, c.line)
@@ -192,6 +183,10 @@ function M.screen(wgt)
   local L, c = wgt.lay, wgt.colors
   if not c.clear then
     fillRect(0, 0, L.w, L.h, c.bg)
+  elseif c.dim < 15 then
+    -- A background image or the radio's own: dim all of it evenly, in the
+    -- background colour. `c.dim` is EdgeTX's transparency, 0 solid to 15 none.
+    fillRect(0, 0, L.w, L.h, c.bg, c.dim)
   end
   if L.tooSmall then
     local x, y = floor(L.w / 2), floor(L.h / 2)
@@ -205,9 +200,6 @@ function M.screen(wgt)
   elrsPanel(L, wgt.elrs, c)
   quadStrip(L, wgt, c)
 
-  if c.clear then
-    backdrop(L.mid, c)
-  end
   local s = wgt.sticks
   gimbal(L.left, s.left.x, s.left.y, c)
   gimbal(L.right, s.right.x, s.right.y, c)

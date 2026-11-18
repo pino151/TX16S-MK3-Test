@@ -153,7 +153,6 @@ function M.compute(w, h, auxCount)
     iconW = floor(iconH * 2.2),
     nubW = max(2, floor(iconH / 4)),
     gap = pad,
-    box = { x = 0, y = 0, w = w, h = barH },  -- for the backdrop
   }
   local top = barH  -- everything else starts below the bar
   local stripH = floor(h * (h < SMALL_BELOW and 0.24 or 0.19))
@@ -191,8 +190,6 @@ function M.compute(w, h, auxCount)
   -- radio itself.
   local midY = top + 2 * pad + topH
   local midH = h - top - topH - stripH - 4 * pad
-  -- Behind the sticks and aux bars: the backdrop over a background image.
-  L.mid = { x = pad, y = midY, w = innerW, h = midH }
   local s = min(midH - pad - labelH, floor(w * 0.21))
   local gy = midY + floor((midH - (s + pad + labelH)) / 2)
   L.left = gimbal(pad, gy, s, pad, labelH)

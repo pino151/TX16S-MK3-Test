@@ -867,10 +867,11 @@ def main():
                 problems.add(f"{w}x{h}: a tap between the sticks opened a menu")
 
         def check_backdrop():
-            # Over an image the text sits on see-through backdrops. Labels
+            # Over an image the whole background is dimmed evenly: inside the
+            # boxes, the status bar and the gaps between boxes alike. Labels
             # and values must stay readable over the worst case (a white
             # image for white text, a black one for black text), and BgDim
-            # 0 / 100 must give no backdrop / a solid one.
+            # 0 / 100 must give no dimming / a solid background.
             for light in (False, True):
                 for name, colour in (("white", (255, 255, 255)), ("black", (0, 0, 0))):
                     radio.images = {"/IMAGES/plain.png": Image.new("RGB", (w, h), colour)}
@@ -880,10 +881,11 @@ def main():
                     v = wgt.lay.video
                     under = s.img.getpixel((int(v.x) + 2, int(v.y + v.h) - 3))
                     bar = s.img.getpixel((w // 2, 1))
-                    mid = wgt.lay.mid
-                    band = s.img.getpixel((int(mid.x) + 1, int(mid.y) + 1))
-                    if not under == bar == band:
-                        problems.add(f"{w}x{h}: backdrops differ: box {under}, bar {bar}, sticks {band}")
+                    gap = s.img.getpixel((int(v.x) - 2, int(v.y + v.h // 2)))
+                    corner = s.img.getpixel((w - 1, h - 1))
+                    if not under == bar == gap == corner:
+                        problems.add(f"{w}x{h}: uneven dimming: box {under}, bar {bar}, "
+                                     f"gap {gap}, corner {corner}")
                     for what, flag in (("labels", wgt.colors.label), ("text", wgt.colors.fg)):
                         ratio = contrast(flag_rgb(int(flag)), under)
                         if ratio < 4.5:

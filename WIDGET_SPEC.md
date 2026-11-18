@@ -147,14 +147,14 @@ one whose type changes, so `BgImage` took the slot of the dropped `Freestyle` op
   fills), so the radio's own main-view background shows through. `Light` then only picks the
   text colour: off = white text (dark backgrounds), on = black text (light ones). The VTX
   picker and ELRS menu keep their solid background. `BgImage`, when set, wins.
-- `BgDim` (0–100 %, default 65): how much of the background (image or the radio's own) the
-  see-through backdrops hide. Over a background, every box, the status bar and the band with
-  the sticks and aux bars get a backdrop in the background colour (black, or white with
+- `BgDim` (0–100 %, default 65): how much to dim the background (image or the radio's own).
+  The whole background gets one layer in the background colour (black, or white with
   `Light`), drawn with `lcd.drawFilledRectangle`'s transparency (0 solid to 15 none; LVGL
-  covers (15 − t) / 15). The gaps between them show the background untouched. Labels and
-  lines are brighter then (`seeThrough` colours in draw.lua). 65 % keeps the small grey labels
-  at a contrast of at least 4.5 even over a plain white image (50 % gave 3.4); 0 = no
-  backdrop, 100 = solid.
+  covers (15 − t) / 15); the boxes then draw only their outlines. (An earlier version put
+  see-through backdrops behind each box instead; the user preferred dimming it all evenly.)
+  Labels and lines are brighter then (`seeThrough` colours in draw.lua). 65 % keeps the small
+  grey labels at a contrast of at least 4.5 even over a plain white image (50 % gave 3.4);
+  0 = not dimmed, 100 = solid.
 
 ## Data sources
 - Status bar: `getValue("tx-voltage")` (volts, 0.1 V steps) every 0.5 s; battery range and

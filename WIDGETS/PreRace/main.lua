@@ -33,7 +33,7 @@ local options = {
   { "Cells", VALUE, 0, 0, 14 },     -- 0 = work out the quad's cell count
   { "BgImage", FILE, "", "/IMAGES" },  -- a background image from /IMAGES (bg.lua)
   { "ThemeBg", BOOL, 0 },           -- 1 = no black/white fill: the radio's own background shows
-  { "BgDim", VALUE, 65, 0, 100 },   -- % of a background image the see-through backdrops hide
+  { "BgDim", VALUE, 65, 0, 100 },   -- % to dim a background image (or the radio's own) by
 }
 
 local function applyOptions(wgt, opts)
@@ -198,8 +198,8 @@ local function refresh(wgt, event, touchState)
     c.line, c.label = c.solid.line, c.solid.label
     m.elrsmenu.draw(menuLayout(wgt), e, c, m.picker.button)
   else
-    -- Over a background image or the radio's own background, the text sits
-    -- on see-through backdrops (draw.backdrop) with brighter labels and lines.
+    -- Over a background image or the radio's own background, draw.screen
+    -- dims the whole background, and labels and lines are brighter.
     local lay, bg = wgt.lay, wgt.bg
     c.clear = wgt.themeBg
     if not lay.tooSmall and m.bg.draw(bg, lay.w, lay.h) then
@@ -210,7 +210,7 @@ local function refresh(wgt, event, touchState)
     m.draw.screen(wgt)
     if lay.bar then
       m.status.update(wgt.status)
-      m.status.draw(lay.bar, wgt.status, c, bg.failed and "IMAGE NOT LOADED", m.draw.backdrop)
+      m.status.draw(lay.bar, wgt.status, c, bg.failed and "IMAGE NOT LOADED")
     end
   end
 end
