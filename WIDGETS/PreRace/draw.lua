@@ -15,6 +15,8 @@ local fillCircle = lcd.drawFilledCircle
 -- sky blue for bars, the stick dot and selections, amber for warnings.
 -- `levels` are indexed by the status levels in telem.lua (NONE, OK, WARN,
 -- BAD), plus 4 for a value that's on its way (vtx.lua's PENDING).
+-- Over a background image (`clear`) the labels and lines get more contrast:
+-- they sit on the dimmed image instead of a solid panel.
 function M.palette(light)
   if light then
     local amber = lcd.RGB(200, 115, 0)
@@ -23,6 +25,8 @@ function M.palette(light)
       panel = lcd.RGB(236, 236, 236),
       line = lcd.RGB(140, 140, 140),
       label = lcd.RGB(70, 70, 70),
+      solid = { line = lcd.RGB(140, 140, 140), label = lcd.RGB(70, 70, 70) },
+      seeThrough = { line = lcd.RGB(90, 90, 90), label = lcd.RGB(35, 35, 35) },
       fg = BLACK,
       accent = lcd.RGB(0, 105, 200),
       barBg = lcd.RGB(205, 205, 205),
@@ -37,6 +41,8 @@ function M.palette(light)
     panel = lcd.RGB(22, 22, 22),
     line = lcd.RGB(95, 95, 95),
     label = lcd.RGB(175, 175, 175),
+    solid = { line = lcd.RGB(95, 95, 95), label = lcd.RGB(175, 175, 175) },
+    seeThrough = { line = lcd.RGB(150, 150, 150), label = lcd.RGB(220, 220, 220) },
     fg = WHITE,
     accent = lcd.RGB(40, 170, 235),
     barBg = lcd.RGB(60, 60, 60),
@@ -59,8 +65,18 @@ local function clamp(v)
   return v
 end
 
+-- Over a background (`clear`) the whole background is dimmed (M.screen),
+-- and the boxes (ELRS, VIDEO, QUAD) a little more: one more see-through
+-- layer in the background colour. EdgeTX transparency 11 covers 4/15 of
+-- what's under it.
+local BOX_DIM = 11
+
 local function frame(p, c)
-  fillRect(p.x, p.y, p.w, p.h, c.panel)
+  if c.clear then
+    fillRect(p.x, p.y, p.w, p.h, c.bg, BOX_DIM)
+  else
+    fillRect(p.x, p.y, p.w, p.h, c.panel)
+  end
   drawRect(p.x, p.y, p.w, p.h, c.line)
 end
 
@@ -171,7 +187,13 @@ end
 
 function M.screen(wgt)
   local L, c = wgt.lay, wgt.colors
-  fillRect(0, 0, L.w, L.h, c.bg)
+  if not c.clear then
+    fillRect(0, 0, L.w, L.h, c.bg)
+  elseif c.dim < 15 then
+    -- A background image or the radio's own: dim all of it evenly, in the
+    -- background colour. `c.dim` is EdgeTX's transparency, 0 solid to 15 none.
+    fillRect(0, 0, L.w, L.h, c.bg, c.dim)
+  end
   if L.tooSmall then
     local x, y = floor(L.w / 2), floor(L.h / 2)
     local _, lineH = lcd.sizeText("A", SMLSIZE)

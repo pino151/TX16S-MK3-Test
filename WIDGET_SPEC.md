@@ -51,14 +51,14 @@ red for status (no yellow, which was too harsh).
   - Until the FC's table is read, each power button has what that level does on an HDZero
     VTX underneath ("-" says "keep"). ELRS sends the level to Betaflight, which passes it to
     the VTX unchanged, and HDZero's firmware maps it (`parse_vtx_params` in hdzero-vtx's
-    `src/msp_displayport.c`). Race/Whoop/Nano (default): 1 = 25mW, 2 = 200mW, 3 = 0mW,
-    4–8 = 25mW. Freestyle V1/V2 (`Freestyle` option): 1 = 25mW, 2 = 200mW, 3 = 500mW,
-    4 = 1W, 5 = 0mW, 6–8 = 25mW. A level past the VTX's own falls back to its minimum, so those
-    labels are dimmed; the 0mW level (video off) is amber. Level 4 is labelled 1W in red in
-    both tables (on a Race VTX it's really 25mW, but the user wants the reminder of what it
-    does on a Freestyle VTX).
-  - "POWER" sits level with the numbers and the table's name ("HDZ", or "HDZ FS") level with
-    the labels, in the same small font. Where any label doesn't fit its button with "mW"
+    `src/msp_displayport.c`). The labels follow a Race/Whoop/Nano VTX: 1 = 25mW, 2 = 200mW,
+    3 = 0mW, 4–8 = 25mW. A level past the VTX's own falls back to its minimum, so those labels
+    are dimmed; the 0mW level (video off) is amber. Level 4 is labelled 1W in red (on a Race
+    VTX it's really 25mW, but the user wants the reminder of what it does on a Freestyle VTX:
+    1 = 25mW, 2 = 200mW, 3 = 500mW, 4 = 1W, 5 = 0mW). A `Freestyle` option that switched the
+    labels to that table was dropped at the user's request.
+  - "POWER" sits level with the numbers and "HDZ" level with the labels, in the same small
+    font. Where any label doesn't fit its button with "mW"
     (the MK2), they all drop it: "25", "200", "0", "1W".
   - EXIT, or leaving fullscreen, closes the picker without sending.
   - SEND sends straight away (no confirmation screen). It writes Band, Channel and Pwr Lvl
@@ -128,12 +128,34 @@ Touch and screen size:
   press anywhere does. The layout doesn't avoid it. A widget can't start in fullscreen: the
   Lua API can only leave it (`lcd.exitFullScreen()`), and App mode keeps the button until then.
 
-Widget options (max 5):
+Widget options, in this order (EdgeTX 2.12 allows up to 50; the old limit of 5 is gone). EdgeTX stores option values by position and resets
+one whose type changes, so `BgImage` took the slot of the dropped `Freestyle` option and
+`ThemeBg` kept its slot (and its value). `CHOICE` and `FILE` options exist from EdgeTX 2.12.0
+(`api_general.cpp`), though the widget docs don't list them yet.
 - `Light`: light background instead of black, for strong sun.
 - `StickMode`: 0 = use the radio's stick mode (needs EdgeTX 2.12+, otherwise mode 2), 1–4 to force one.
 - `Cells`: 0 = work out the quad's cell count from the voltage, 1–14 to force one.
-- `Freestyle`: 0 = the VTX picker's power labels follow HDZero Race/Whoop/Nano VTXs, 1 = HDZero
-  Freestyle V1/V2. A `BOOL`, since `CHOICE` options aren't in the 2.12 widget docs.
+- `BgImage` (`FILE`): a background image from the SD card's `/IMAGES` folder (PNG, JPG or
+  BMP), or none (the first entry). `bg.lua` scales it to cover the zone without stretching,
+  cropping the edges evenly, once per image and zone size, and keeps only the fitted copy.
+  EdgeTX allows Lua bitmaps 2 MB in all (`LUA_MEM_EXTRA_MAX`, 2 bytes per pixel): an image
+  exactly the screen's size (800x480 MK3, 480x272 MK2) needs no copy and draws fastest; one
+  over about a megapixel can't be scaled. If it doesn't load, the widget falls back to
+  `ThemeBg`'s choice and the status bar says "IMAGE NOT LOADED" in amber. While an image
+  shows, the main screen draws no solid fills, as with `ThemeBg`.
+- `ThemeBg`: draw no solid background on the main screen (no black/white fill, no panel
+  fills), so the radio's own main-view background shows through. `Light` then only picks the
+  text colour: off = white text (dark backgrounds), on = black text (light ones). The VTX
+  picker and ELRS menu keep their solid background. `BgImage`, when set, wins.
+- `BgDim` (0–100 %, default 65): how much to dim the background (image or the radio's own).
+  The whole background gets one layer in the background colour (black, or white with
+  `Light`), drawn with `lcd.drawFilledRectangle`'s transparency (0 solid to 15 none; LVGL
+  covers (15 − t) / 15). The ELRS, VIDEO and QUAD boxes get one more layer on top, a little
+  dimmer than the rest (`BOX_DIM` in draw.lua, transparency 11: 4/15 more). (An earlier
+  version put backdrops behind the boxes only; the user preferred dimming it all evenly.)
+  Labels and lines are brighter then (`seeThrough` colours in draw.lua). 65 % keeps the small
+  grey labels at a contrast of at least 4.5 even over a plain white image (50 % gave 3.4);
+  0 = not dimmed, 100 = solid.
 
 ## Data sources
 - Status bar: `getValue("tx-voltage")` (volts, 0.1 V steps) every 0.5 s; battery range and
