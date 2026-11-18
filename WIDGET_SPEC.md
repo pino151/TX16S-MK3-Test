@@ -150,8 +150,9 @@ one whose type changes, so `BgImage` took the slot of the dropped `Freestyle` op
 - `BgDim` (0–100 %, default 65): how much to dim the background (image or the radio's own).
   The whole background gets one layer in the background colour (black, or white with
   `Light`), drawn with `lcd.drawFilledRectangle`'s transparency (0 solid to 15 none; LVGL
-  covers (15 − t) / 15); the boxes then draw only their outlines. (An earlier version put
-  see-through backdrops behind each box instead; the user preferred dimming it all evenly.)
+  covers (15 − t) / 15). The ELRS, VIDEO and QUAD boxes get one more layer on top, a little
+  dimmer than the rest (`BOX_DIM` in draw.lua, transparency 11: 4/15 more). (An earlier
+  version put backdrops behind the boxes only; the user preferred dimming it all evenly.)
   Labels and lines are brighter then (`seeThrough` colours in draw.lua). 65 % keeps the small
   grey labels at a contrast of at least 4.5 even over a plain white image (50 % gave 3.4);
   0 = not dimmed, 100 = solid.

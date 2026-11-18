@@ -65,10 +65,16 @@ local function clamp(v)
   return v
 end
 
--- Over a background (`clear`) a box is only its outline: the whole
--- background is dimmed instead (M.screen).
+-- Over a background (`clear`) the whole background is dimmed (M.screen),
+-- and the boxes (ELRS, VIDEO, QUAD) a little more: one more see-through
+-- layer in the background colour. EdgeTX transparency 11 covers 4/15 of
+-- what's under it.
+local BOX_DIM = 11
+
 local function frame(p, c)
-  if not c.clear then
+  if c.clear then
+    fillRect(p.x, p.y, p.w, p.h, c.bg, BOX_DIM)
+  else
     fillRect(p.x, p.y, p.w, p.h, c.panel)
   end
   drawRect(p.x, p.y, p.w, p.h, c.line)

@@ -867,11 +867,17 @@ def main():
                 problems.add(f"{w}x{h}: a tap between the sticks opened a menu")
 
         def check_backdrop():
-            # Over an image the whole background is dimmed evenly: inside the
-            # boxes, the status bar and the gaps between boxes alike. Labels
-            # and values must stay readable over the worst case (a white
-            # image for white text, a black one for black text), and BgDim
-            # 0 / 100 must give no dimming / a solid background.
+            # Over an image the whole background is dimmed evenly (status
+            # bar, gaps between boxes, screen edge), and the boxes a little
+            # more: draw.lua's BOX_DIM, transparency 11. Labels and values
+            # must stay readable over the worst case (a white image for white
+            # text, a black one for black text), and BgDim 0 / 100 must give
+            # no dimming (but for the boxes' own) / a solid background.
+            box_cover = ((15 - 11) * 255 // 15) / 255
+
+            def boxed(base, bg):
+                return tuple(round(a * (1 - box_cover) + b * box_cover) for a, b in zip(base, bg))
+
             for light in (False, True):
                 for name, colour in (("white", (255, 255, 255)), ("black", (0, 0, 0))):
                     radio.images = {"/IMAGES/plain.png": Image.new("RGB", (w, h), colour)}
@@ -883,24 +889,32 @@ def main():
                     bar = s.img.getpixel((w // 2, 1))
                     gap = s.img.getpixel((int(v.x) - 2, int(v.y + v.h // 2)))
                     corner = s.img.getpixel((w - 1, h - 1))
-                    if not under == bar == gap == corner:
-                        problems.add(f"{w}x{h}: uneven dimming: box {under}, bar {bar}, "
-                                     f"gap {gap}, corner {corner}")
-                    for what, flag in (("labels", wgt.colors.label), ("text", wgt.colors.fg)):
-                        ratio = contrast(flag_rgb(int(flag)), under)
+                    bg = flag_rgb(int(wgt.colors.bg))
+                    if not bar == gap == corner:
+                        problems.add(f"{w}x{h}: uneven dimming: bar {bar}, gap {gap}, corner {corner}")
+                    if any(abs(a - b) > 1 for a, b in zip(under, boxed(gap, bg))) or (
+                            under == gap and gap != bg):
+                        problems.add(f"{w}x{h}: box {under} not a little dimmer than the rest "
+                                     f"{gap} (expected {boxed(gap, bg)})")
+                    # Labels sit in the boxes and the status bar, text anywhere.
+                    for what, flag, spot in (("labels", wgt.colors.label, gap),
+                                             ("text", wgt.colors.fg, gap)):
+                        ratio = contrast(flag_rgb(int(flag)), spot)
                         if ratio < 4.5:
-                            problems.add(f"{w}x{h}: {what} on the backdrop over a {name} image: "
+                            problems.add(f"{w}x{h}: {what} on the dimmed {name} image: "
                                          f"contrast {ratio:.1f}, want 4.5 ({'Light' if light else 'dark'})")
                     if name == "white" and not light:
                         save(s, "backdrop-white")
-                    for pct, want in ((0, colour), (100, flag_rgb(int(wgt.colors.bg)))):
+                    for pct, want in ((0, colour), (100, bg)):
                         opts = default_options(widget)
                         opts["BgImage"], opts["Light"], opts["BgDim"] = "plain.png", int(light), pct
                         widget.update(wgt, opts)
                         s = run(wgt, w, h, fonts, frames=2)
-                        got = s.img.getpixel((int(v.x) + 2, int(v.y + v.h) - 3))
-                        if got != want:
-                            problems.add(f"{w}x{h}: BgDim {pct}: box shows {got}, expected {want}")
+                        got = s.img.getpixel((int(v.x) - 2, int(v.y + v.h // 2)))
+                        inside = s.img.getpixel((int(v.x) + 2, int(v.y + v.h) - 3))
+                        if got != want or any(abs(a - b) > 1 for a, b in zip(inside, boxed(want, bg))):
+                            problems.add(f"{w}x{h}: BgDim {pct}: background {got}, box {inside}; "
+                                         f"expected {want}, {boxed(want, bg)}")
 
         def check_bg_image():
             # Test images on the SD card: one the screen's size, a 4:3 photo,
@@ -990,9 +1004,13 @@ def main():
                 bg = flag_rgb(int(wgt.colors.bg))
                 tint = tuple(round(255 * (1 - cover) + v * cover) if i != 1 else round(v * cover)
                              for i, v in enumerate(bg))
+                # ...and in the boxes a little dimmer still (draw.lua's BOX_DIM, 11).
+                box_cover = ((15 - 11) * 255 // 15) / 255
+                boxed = tuple(round(t * (1 - box_cover) + v * box_cover) for t, v in zip(tint, bg))
                 counts = dict((c, n) for n, c in s.img.getcolors(w * h))
                 seen = counts.get((255, 0, 255), 0) + sum(
-                    n for c, n in counts.items() if all(abs(a - b) <= 2 for a, b in zip(c, tint)))
+                    n for c, n in counts.items()
+                    if any(all(abs(a - b) <= 2 for a, b in zip(c, t)) for t in (tint, boxed)))
                 if seen < 0.7 * w * h:
                     problems.add(f"{w}x{h}: ThemeBg covers the background "
                                  f"(it shows through {100 * seen // (w * h)}%)")
