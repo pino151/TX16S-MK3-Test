@@ -63,9 +63,11 @@ end
 -- `B` is the layout's bar (layout.lua). The battery turns red at the
 -- radio's warning voltage. `note`, if given, shows in the middle in amber
 -- (the background image that didn't load).
-function M.draw(B, st, c, note)
+function M.draw(B, st, c, note, backdrop)
   if not c.clear then
     fillRect(0, 0, B.w, B.h, c.panel)
+  else
+    backdrop(B.box, c)
   end
   if note then
     drawText(floor(B.w / 2), B.cy, note, SMLSIZE + CENTER + VCENTER + c.levels[2])

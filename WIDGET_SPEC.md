@@ -128,7 +128,7 @@ Touch and screen size:
   press anywhere does. The layout doesn't avoid it. A widget can't start in fullscreen: the
   Lua API can only leave it (`lcd.exitFullScreen()`), and App mode keeps the button until then.
 
-Widget options (max 5), in this order. EdgeTX stores option values by position and resets
+Widget options, in this order (EdgeTX 2.12 allows up to 50; the old limit of 5 is gone). EdgeTX stores option values by position and resets
 one whose type changes, so `BgImage` took the slot of the dropped `Freestyle` option and
 `ThemeBg` kept its slot (and its value). `CHOICE` and `FILE` options exist from EdgeTX 2.12.0
 (`api_general.cpp`), though the widget docs don't list them yet.
@@ -142,11 +142,19 @@ one whose type changes, so `BgImage` took the slot of the dropped `Freestyle` op
   exactly the screen's size (800x480 MK3, 480x272 MK2) needs no copy and draws fastest; one
   over about a megapixel can't be scaled. If it doesn't load, the widget falls back to
   `ThemeBg`'s choice and the status bar says "IMAGE NOT LOADED" in amber. While an image
-  shows, the main screen draws no fills, as with `ThemeBg`.
-- `ThemeBg`: draw no background at all on the main screen (no black/white fill, no panel
+  shows, the main screen draws no solid fills, as with `ThemeBg`.
+- `ThemeBg`: draw no solid background on the main screen (no black/white fill, no panel
   fills), so the radio's own main-view background shows through. `Light` then only picks the
   text colour: off = white text (dark backgrounds), on = black text (light ones). The VTX
   picker and ELRS menu keep their solid background. `BgImage`, when set, wins.
+- `BgDim` (0–100 %, default 65): how much of the background (image or the radio's own) the
+  see-through backdrops hide. Over a background, every box, the status bar and the band with
+  the sticks and aux bars get a backdrop in the background colour (black, or white with
+  `Light`), drawn with `lcd.drawFilledRectangle`'s transparency (0 solid to 15 none; LVGL
+  covers (15 − t) / 15). The gaps between them show the background untouched. Labels and
+  lines are brighter then (`seeThrough` colours in draw.lua). 65 % keeps the small grey labels
+  at a contrast of at least 4.5 even over a plain white image (50 % gave 3.4); 0 = no
+  backdrop, 100 = solid.
 
 ## Data sources
 - Status bar: `getValue("tx-voltage")` (volts, 0.1 V steps) every 0.5 s; battery range and

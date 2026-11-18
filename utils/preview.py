@@ -68,6 +68,18 @@ INVERS, VCENTER, CENTER, RIGHT, SHADOWED, BLINK, RGB_FLAG = (
 SOLID, DOTTED = 0xFF, 0x55
 
 
+def contrast(a, b):
+    """WCAG contrast ratio of two (r, g, b) colours: 4.5 is the usual bar
+    for small text, 3 for large."""
+    def lum(c):
+        def ch(v):
+            v /= 255
+            return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+        return 0.2126 * ch(c[0]) + 0.7152 * ch(c[1]) + 0.0722 * ch(c[2])
+    hi, lo = sorted((lum(a), lum(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
 def rgb_flag(r, g, b):
     c565 = ((int(r) & 0xF8) << 8) | ((int(g) & 0xFC) << 3) | (int(b) >> 3)
     return (c565 << 16) | RGB_FLAG
@@ -244,12 +256,24 @@ class Screen:
         _, line_h, _ = self.fonts.get(flags or 0)
         return self.fonts.width(str(text), flags or 0), line_h
 
-    def drawFilledRectangle(self, x, y, w, h, flags=0, _opacity=0):
+    def drawFilledRectangle(self, x, y, w, h, flags=0, opacity=0):
+        """`opacity` is EdgeTX's transparency, 0 (solid) to 15 (nothing
+        drawn): LVGL covers (15 - opacity) * 255 / 15 of 255 (bitmapbuffer.cpp)."""
         x, y, w, h = int(x), int(y), int(w), int(h)
         if w <= 0 or h <= 0:
             return
         self.check("filled rectangle", x, y, x + w, y + h)
-        self.d.rectangle([x, y, x + w - 1, y + h - 1], fill=flag_rgb(flags or 0))
+        opacity = int(opacity or 0) & 0x0F
+        if opacity == 15:
+            return
+        color = flag_rgb(flags or 0)
+        if opacity == 0:
+            self.d.rectangle([x, y, x + w - 1, y + h - 1], fill=color)
+            return
+        box = (x, y, x + w, y + h)
+        cover = ((15 - opacity) * 255 // 15) / 255
+        under = self.img.crop(box)
+        self.img.paste(Image.blend(under, Image.new("RGB", under.size, color), cover), box)
 
     def drawRectangle(self, x, y, w, h, flags=0, t=1, _opacity=0):
         x, y, w, h, t = int(x), int(y), int(w), int(h), int(t or 1)
@@ -514,8 +538,8 @@ def main():
         problems.add(f"widget name {widget.name!r} is longer than 10 characters")
     opts_def = widget.options
     if opts_def is not None:
-        if len(opts_def) > 5:
-            problems.add("more than 5 widget options")
+        if len(opts_def) > 50:
+            problems.add("more than 50 widget options (EdgeTX 2.12's MAX_WIDGET_OPTIONS)")
         for opt in opts_def.values():
             if len(str(opt[1])) > 10 or " " in str(opt[1]):
                 problems.add(f"option name {opt[1]!r}: max 10 characters, no spaces")
@@ -842,6 +866,40 @@ def main():
             if wgt.vtx.ui != "main" or wgt.elrs.ui != "main":
                 problems.add(f"{w}x{h}: a tap between the sticks opened a menu")
 
+        def check_backdrop():
+            # Over an image the text sits on see-through backdrops. Labels
+            # and values must stay readable over the worst case (a white
+            # image for white text, a black one for black text), and BgDim
+            # 0 / 100 must give no backdrop / a solid one.
+            for light in (False, True):
+                for name, colour in (("white", (255, 255, 255)), ("black", (0, 0, 0))):
+                    radio.images = {"/IMAGES/plain.png": Image.new("RGB", (w, h), colour)}
+                    fresh_radio(make_module())
+                    wgt = new_widget(w, h, light, bg_image="plain.png")
+                    s = run(wgt, w, h, fonts, frames=20)
+                    v = wgt.lay.video
+                    under = s.img.getpixel((int(v.x) + 2, int(v.y + v.h) - 3))
+                    bar = s.img.getpixel((w // 2, 1))
+                    mid = wgt.lay.mid
+                    band = s.img.getpixel((int(mid.x) + 1, int(mid.y) + 1))
+                    if not under == bar == band:
+                        problems.add(f"{w}x{h}: backdrops differ: box {under}, bar {bar}, sticks {band}")
+                    for what, flag in (("labels", wgt.colors.label), ("text", wgt.colors.fg)):
+                        ratio = contrast(flag_rgb(int(flag)), under)
+                        if ratio < 4.5:
+                            problems.add(f"{w}x{h}: {what} on the backdrop over a {name} image: "
+                                         f"contrast {ratio:.1f}, want 4.5 ({'Light' if light else 'dark'})")
+                    if name == "white" and not light:
+                        save(s, "backdrop-white")
+                    for pct, want in ((0, colour), (100, flag_rgb(int(wgt.colors.bg)))):
+                        opts = default_options(widget)
+                        opts["BgImage"], opts["Light"], opts["BgDim"] = "plain.png", int(light), pct
+                        widget.update(wgt, opts)
+                        s = run(wgt, w, h, fonts, frames=2)
+                        got = s.img.getpixel((int(v.x) + 2, int(v.y + v.h) - 3))
+                        if got != want:
+                            problems.add(f"{w}x{h}: BgDim {pct}: box shows {got}, expected {want}")
+
         def check_bg_image():
             # Test images on the SD card: one the screen's size, a 4:3 photo,
             # one too big for the 2 MB Lua bitmaps may use, and a text file.
@@ -850,8 +908,21 @@ def main():
                 img.putdata([(40 + 120 * x // iw, 60, 90 + 100 * y // ih)
                              for y in range(ih) for x in range(iw)])
                 return img
+            def busy(iw, ih):
+                # Photo-like and hard on text: bright sky, a sun, a dark
+                # treeline and high-contrast stripes.
+                img = gradient(iw, ih)
+                d = ImageDraw.Draw(img)
+                for y in range(ih // 2):
+                    d.line([(0, y), (iw, y)], fill=(120 + 120 * y // ih, 190 + 60 * y // ih, 250))
+                d.ellipse([iw * 0.6, ih * 0.08, iw * 0.78, ih * 0.32], fill=(255, 250, 220))
+                for i in range(0, iw, 48):
+                    d.polygon([(i, ih), (i + 24, ih * 0.45), (i + 48, ih)], fill=(20, 70 + i % 60, 30))
+                for i in range(0, iw, 40):
+                    d.rectangle([i, ih * 0.82, i + 18, ih], fill=(250, 250, 250))
+                return img
             radio.images = {"/IMAGES/exact.png": gradient(w, h),
-                            "/IMAGES/photo.jpg": gradient(1024, 768),
+                            "/IMAGES/photo.jpg": busy(1024, 768),
                             "/IMAGES/huge.png": gradient(1920, 1080),
                             "/IMAGES/notes.txt": b"not an image"}
             magenta = (255, 0, 255)
@@ -906,16 +977,23 @@ def main():
                 problems.add(f"{w}x{h}: the image stays after BgImage is cleared")
 
         def check_theme_bg():
-            # ThemeBg: the main screen fills nothing big, so the radio's
-            # background (magenta here) shows; text colour follows Light.
+            # ThemeBg: the main screen fills nothing solid, so the radio's
+            # background (magenta here) shows, as it is or through the
+            # see-through backdrops; text colour follows Light.
             for light in (False, True):
                 fresh_radio(make_module())
                 wgt = new_widget(w, h, light, theme_bg=True)
                 s = run(wgt, w, h, fonts, frames=80, outputs=OUT_MOVING, telemetry=dict(TLM_GOOD))
-                bare = dict((c, n) for n, c in s.img.getcolors(w * h)).get((255, 0, 255), 0)
-                if bare < 0.7 * w * h:
-                    problems.add(f"{w}x{h}: ThemeBg still covers the background "
-                                 f"({100 * bare // (w * h)}% shows)")
+                cover = ((15 - int(wgt.colors.dim)) * 255 // 15) / 255
+                bg = flag_rgb(int(wgt.colors.bg))
+                tint = tuple(round(255 * (1 - cover) + v * cover) if i != 1 else round(v * cover)
+                             for i, v in enumerate(bg))
+                counts = dict((c, n) for n, c in s.img.getcolors(w * h))
+                seen = counts.get((255, 0, 255), 0) + sum(
+                    n for c, n in counts.items() if all(abs(a - b) <= 2 for a, b in zip(c, tint)))
+                if seen < 0.7 * w * h:
+                    problems.add(f"{w}x{h}: ThemeBg covers the background "
+                                 f"(it shows through {100 * seen // (w * h)}%)")
                 want = flag_rgb(int(wgt.colors.fg))
                 if s.text_colors.get("ARM") != want or want != ((0, 0, 0) if light else (255, 255, 255)):
                     problems.add(f"{w}x{h}: ThemeBg text colour doesn't follow Light")
@@ -1028,6 +1106,7 @@ def main():
         guarded(f"{w}x{h} status bar checks", check_status)
         guarded(f"{w}x{h} theme background checks", check_theme_bg)
         guarded(f"{w}x{h} background image checks", check_bg_image)
+        guarded(f"{w}x{h} backdrop checks", check_backdrop)
         fresh_radio()
 
     for name in lua.globals().GLOBAL_WRITES.values():

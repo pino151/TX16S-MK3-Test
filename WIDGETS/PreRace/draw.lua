@@ -15,6 +15,8 @@ local fillCircle = lcd.drawFilledCircle
 -- sky blue for bars, the stick dot and selections, amber for warnings.
 -- `levels` are indexed by the status levels in telem.lua (NONE, OK, WARN,
 -- BAD), plus 4 for a value that's on its way (vtx.lua's PENDING).
+-- Over a background image (`clear`) the labels and lines get more contrast:
+-- they sit on the see-through backdrop instead of a solid panel.
 function M.palette(light)
   if light then
     local amber = lcd.RGB(200, 115, 0)
@@ -23,6 +25,8 @@ function M.palette(light)
       panel = lcd.RGB(236, 236, 236),
       line = lcd.RGB(140, 140, 140),
       label = lcd.RGB(70, 70, 70),
+      solid = { line = lcd.RGB(140, 140, 140), label = lcd.RGB(70, 70, 70) },
+      seeThrough = { line = lcd.RGB(90, 90, 90), label = lcd.RGB(35, 35, 35) },
       fg = BLACK,
       accent = lcd.RGB(0, 105, 200),
       barBg = lcd.RGB(205, 205, 205),
@@ -37,6 +41,8 @@ function M.palette(light)
     panel = lcd.RGB(22, 22, 22),
     line = lcd.RGB(95, 95, 95),
     label = lcd.RGB(175, 175, 175),
+    solid = { line = lcd.RGB(95, 95, 95), label = lcd.RGB(175, 175, 175) },
+    seeThrough = { line = lcd.RGB(150, 150, 150), label = lcd.RGB(220, 220, 220) },
     fg = WHITE,
     accent = lcd.RGB(40, 170, 235),
     barBg = lcd.RGB(60, 60, 60),
@@ -59,8 +65,19 @@ local function clamp(v)
   return v
 end
 
+-- A see-through backdrop in the background colour, over an image. `c.dim`
+-- is EdgeTX's transparency: 0 solid, 15 none.
+local function backdrop(r, c)
+  if c.dim < 15 then
+    fillRect(r.x, r.y, r.w, r.h, c.bg, c.dim)
+  end
+end
+M.backdrop = backdrop  -- status.lua uses it too
+
 local function frame(p, c)
-  if not c.clear then
+  if c.clear then
+    backdrop(p, c)
+  else
     fillRect(p.x, p.y, p.w, p.h, c.panel)
   end
   drawRect(p.x, p.y, p.w, p.h, c.line)
@@ -188,6 +205,9 @@ function M.screen(wgt)
   elrsPanel(L, wgt.elrs, c)
   quadStrip(L, wgt, c)
 
+  if c.clear then
+    backdrop(L.mid, c)
+  end
   local s = wgt.sticks
   gimbal(L.left, s.left.x, s.left.y, c)
   gimbal(L.right, s.right.x, s.right.y, c)

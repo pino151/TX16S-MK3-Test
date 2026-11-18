@@ -33,6 +33,7 @@ local options = {
   { "Cells", VALUE, 0, 0, 14 },     -- 0 = work out the quad's cell count
   { "BgImage", FILE, "", "/IMAGES" },  -- a background image from /IMAGES (bg.lua)
   { "ThemeBg", BOOL, 0 },           -- 1 = no black/white fill: the radio's own background shows
+  { "BgDim", VALUE, 65, 0, 100 },   -- % of a background image the see-through backdrops hide
 }
 
 local function applyOptions(wgt, opts)
@@ -42,6 +43,10 @@ local function applyOptions(wgt, opts)
   -- VTX picker and the ELRS menu keep theirs, so their buttons stay readable.
   -- A background image does the same while it shows (refresh()).
   wgt.themeBg = opts.ThemeBg == 1
+  -- BgDim in %, as EdgeTX's transparency for lcd.drawFilledRectangle: 0 is
+  -- solid, 15 is see-through (none drawn). Lua 5.3: keep it an integer.
+  local pct = math.max(0, math.min(100, opts.BgDim or 65))
+  wgt.colors.dim = 15 - math.floor(pct * 15 / 100 + 0.5)
   local name = opts.BgImage or ""
   if not wgt.bg or wgt.bg.name ~= name then
     wgt.bg = nil
@@ -185,20 +190,27 @@ local function refresh(wgt, event, touchState)
   elseif event ~= 0 then
     onEvent(wgt, event, touchState)
   end
+  local c = wgt.colors
   if v.ui ~= "main" then
-    m.picker.draw(pickerLayout(wgt), v, m.vtx, wgt.colors)
+    c.line, c.label = c.solid.line, c.solid.label
+    m.picker.draw(pickerLayout(wgt), v, m.vtx, c)
   elseif e.ui ~= "main" then
-    m.elrsmenu.draw(menuLayout(wgt), e, wgt.colors, m.picker.button)
+    c.line, c.label = c.solid.line, c.solid.label
+    m.elrsmenu.draw(menuLayout(wgt), e, c, m.picker.button)
   else
-    local lay, c, bg = wgt.lay, wgt.colors, wgt.bg
+    -- Over a background image or the radio's own background, the text sits
+    -- on see-through backdrops (draw.backdrop) with brighter labels and lines.
+    local lay, bg = wgt.lay, wgt.bg
     c.clear = wgt.themeBg
     if not lay.tooSmall and m.bg.draw(bg, lay.w, lay.h) then
       c.clear = true
     end
+    local set = c.clear and c.seeThrough or c.solid
+    c.line, c.label = set.line, set.label
     m.draw.screen(wgt)
     if lay.bar then
       m.status.update(wgt.status)
-      m.status.draw(lay.bar, wgt.status, c, bg.failed and "IMAGE NOT LOADED")
+      m.status.draw(lay.bar, wgt.status, c, bg.failed and "IMAGE NOT LOADED", m.draw.backdrop)
     end
   end
 end
